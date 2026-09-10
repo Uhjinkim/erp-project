@@ -1,0 +1,23 @@
+[project]
+name = "erp-backend"
+version = "0.1.0"
+description = "ERP project Django backend"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "django>=5.2,<5.3",
+    "django-environ>=0.12,<1",
+    "psycopg[binary]>=3.2,<4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12,<1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
