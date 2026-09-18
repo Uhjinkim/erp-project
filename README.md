@@ -66,6 +66,26 @@ bun run dev
 
 Vite는 개발 중 `/api` 요청을 Django의 8000번 포트로 프록시합니다.
 
+## 휴가 신청 모듈
+
+휴가 신청/승인 기능은 `backend/vacation/` 안에서 Domain → Application → Infrastructure →
+Presentation 레이어로 분리되어 있습니다. Domain과 Application에는 Django 의존성이 없으며,
+상태 변경과 이력 저장은 하나의 트랜잭션으로 처리합니다.
+
+현재 사원·조직·인증 모듈이 아직 없으므로 계약 우선 개발 어댑터를 사용합니다.
+
+- React 화면의 현재 사용자 선택 또는 `X-Employee-No` 요청 헤더로 개발용 사원을 선택합니다.
+- 개발용 사원·승인선·잔여일수는 `backend/config/settings.py`의
+  `VACATION_DEVELOPMENT_EMPLOYEES`에만 정의되어 있습니다.
+- 사원 모듈이 준비되면 `WorkforceGateway`, `LeaveBalanceGateway` 구현과 요청 사용자 식별만
+  실제 어댑터로 교체해야 합니다. 클라이언트가 보낸 사원번호를 운영 인증으로 사용하면 안 됩니다.
+
+주요 API는 `/api/vacations/` 아래에 있으며 휴가 유형, 본인 신청, 승인 대상, 취소, 승인·반려,
+승인 회수, 수정·재신청, 상태 이력 조회를 제공합니다.
+
+모델 변경 migration은 생성되어 있지만 공유 DB에는 자동 적용하지 않습니다. 적용 전 대상 환경과
+권한을 확인한 뒤 인프라 관리자와 협의하세요.
+
 ## 자주 사용하는 명령
 
 ```bash

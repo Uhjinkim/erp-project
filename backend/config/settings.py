@@ -22,6 +22,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
+    "vacation.apps.VacationConfig",
 ]
 
 MIDDLEWARE = [
@@ -81,3 +83,16 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+
+# Temporary contract-first data used until employee/auth and leave-balance adapters exist.
+VACATION_DEVELOPMENT_EMPLOYEES = {
+    "1001": {"active": True, "approver_no": 2001, "roles": [], "balances": {"ANNUAL": 15}},
+    "1002": {"active": True, "approver_no": 2001, "roles": [], "balances": {"ANNUAL": 7.5}},
+    "2001": {"active": True, "approver_no": 9001, "roles": [], "balances": {"ANNUAL": 12}},
+    "9001": {
+        "active": True,
+        "approver_no": 9001,
+        "roles": ["HR_MANAGER"],
+        "balances": {"ANNUAL": 20},
+    },
+}
