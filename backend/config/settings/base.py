@@ -1,19 +1,24 @@
+import os
 from pathlib import Path
 
 import environ
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 REPOSITORY_DIR = BASE_DIR.parent
 
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),
     DJANGO_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
+    DEVELOPMENT_OFFLINE_MODE=(bool, False),
+    HEALTH_CHECK_TIMEOUT_SECONDS=(float, 1.0),
 )
-environ.Env.read_env(REPOSITORY_DIR / ".env", overwrite=False)
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="unsafe-development-key")
-DEBUG = env("DJANGO_DEBUG")
-ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+
+def load_environment(name: str) -> None:
+    default_path = BASE_DIR / f".env.{name}"
+    environment_path = Path(os.environ.get("DJANGO_ENV_FILE", default_path))
+    environ.Env.read_env(environment_path, overwrite=False)
+
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -23,6 +28,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "accounts.apps.AccountsConfig",
+    "workforce.apps.WorkforceConfig",
     "vacation.apps.VacationConfig",
 ]
 
@@ -56,17 +63,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DB_NAME", default="erp"),
-        "USER": env("DB_USER", default="erp"),
-        "PASSWORD": env("DB_PASSWORD", default="erp"),
-        "HOST": env("DB_HOST", default="localhost"),
-        "PORT": env("DB_PORT", default="5432"),
-    }
-}
-
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -81,18 +77,17 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+AUTH_USER_MODEL = "accounts.User"
 
-REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
-
-# Temporary contract-first data used until employee/auth and leave-balance adapters exist.
-VACATION_DEVELOPMENT_EMPLOYEES = {
-    "1001": {"active": True, "approver_no": 2001, "roles": [], "balances": {"ANNUAL": 15}},
-    "1002": {"active": True, "approver_no": 2001, "roles": [], "balances": {"ANNUAL": 7.5}},
-    "2001": {"active": True, "approver_no": 9001, "roles": [], "balances": {"ANNUAL": 12}},
-    "9001": {
-        "active": True,
-        "approver_no": 9001,
-        "roles": ["HR_MANAGER"],
-        "balances": {"ANNUAL": 20},
-    },
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "accounts.authentication.ActiveEmployeeSessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
+
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"

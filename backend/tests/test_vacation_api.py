@@ -3,9 +3,17 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from rest_framework.test import APIClient
 
+from vacation.infrastructure.models import LeaveTypeModel
+
 
 @pytest.mark.django_db
 def test_request_approve_and_history_flow() -> None:
+    LeaveTypeModel.objects.create(
+        type_id="ANNUAL",
+        type_name="연차",
+        is_paid=True,
+        deduct_days=1,
+    )
     client = APIClient()
     now = datetime.now(UTC) + timedelta(days=10)
 

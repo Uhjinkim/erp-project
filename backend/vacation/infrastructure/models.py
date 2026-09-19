@@ -1,6 +1,8 @@
 from django.db import models
 from django.db.models import F, Q
 
+from workforce.infrastructure.models import Employee
+
 
 class LeaveTypeModel(models.Model):
     type_id = models.CharField(primary_key=True, max_length=20)
@@ -79,3 +81,34 @@ class LeaveRequestHistoryModel(models.Model):
         db_table = "leave_request_history"
         ordering = ["changed_at", "history_id"]
         indexes = [models.Index(fields=["request", "changed_at"], name="leave_hist_req_time_idx")]
+
+
+class LeaveBalanceModel(models.Model):
+    balance_id = models.BigAutoField(primary_key=True)
+    employee = models.ForeignKey(
+        Employee,
+        db_column="emp_no",
+        on_delete=models.RESTRICT,
+        related_name="leave_balances",
+    )
+    vacation_type = models.ForeignKey(
+        LeaveTypeModel,
+        db_column="type_id",
+        on_delete=models.RESTRICT,
+        related_name="employee_balances",
+    )
+    remaining_days = models.DecimalField(max_digits=5, decimal_places=2)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "leave_balances"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "vacation_type"],
+                name="leave_balance_employee_type_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(remaining_days__gte=0),
+                name="leave_balance_days_nonnegative",
+            ),
+        ]

@@ -1,7 +1,10 @@
 from functools import cached_property
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import APIException
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,32 +23,41 @@ from vacation.domain.exceptions import (
     VacationRequestNotFoundError,
     VacationTypeNotFoundError,
 )
-from vacation.infrastructure.development_gateways import (
-    SettingsLeaveBalanceGateway,
-    SettingsWorkforceGateway,
-)
+from vacation.infrastructure.gateways import build_vacation_gateways
 from vacation.infrastructure.repositories import DjangoVacationUnitOfWork
+from vacation.presentation.identity import get_employee_identity
 from vacation.presentation.serializers import ReasonSerializer, VacationRequestInputSerializer
 
 
+class VacationServiceUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_code = "service_unavailable"
+
+
 class VacationAPIView(APIView):
+    # Identity is resolved explicitly below: development headers in development and
+    # authenticated session users in production.
+    permission_classes = [AllowAny]
+
+    def initial(self, request: Request, *args: object, **kwargs: object) -> None:
+        super().initial(request, *args, **kwargs)
+        if settings.DEVELOPMENT_OFFLINE_MODE:
+            raise VacationServiceUnavailable("개발 오프라인 모드에서는 휴가 API가 비활성화됩니다.")
+        if not settings.VACATION_INTEGRATION_READY:
+            raise VacationServiceUnavailable("사원·인증 연동이 아직 구성되지 않았습니다.")
+
     @cached_property
     def service(self) -> VacationService:
+        workforce, balances = build_vacation_gateways()
         return VacationService(
             unit_of_work_factory=DjangoVacationUnitOfWork,
-            workforce=SettingsWorkforceGateway(),
-            balances=SettingsLeaveBalanceGateway(),
+            workforce=workforce,
+            balances=balances,
             clock=timezone.now,
         )
 
     def employee_no(self, request: Request) -> int:
-        value = request.headers.get("X-Employee-No")
-        if value is None:
-            raise VacationPermissionError("X-Employee-No 헤더가 필요합니다.")
-        try:
-            return int(value)
-        except ValueError as exc:
-            raise VacationPermissionError("X-Employee-No 헤더는 사원번호여야 합니다.") from exc
+        return get_employee_identity().employee_no(request)
 
     def error_response(self, error: VacationError) -> Response:
         response_status = status.HTTP_400_BAD_REQUEST

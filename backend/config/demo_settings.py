@@ -1,4 +1,4 @@
-from config.settings import *  # noqa: F403
+from config.settings.development import *  # noqa: F403
 
 DATABASES = {  # noqa: F405
     "default": {
