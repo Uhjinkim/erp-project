@@ -290,8 +290,9 @@ same-origin 흐름을 확인할 때는 nginx `8080` 주소를 사용한다.
 Frontend는 전체 연결이 정상이 아닐 때 `오프라인 / 미연결` 상태를 표시하고 업무 입력을
 비활성화합니다.
 
-현재 Redis health check는 Redis 명령 인증이 아닌 터널의 TCP 도달 여부를 확인합니다. 실제 Redis
-인증은 올바른 `REDIS_URL`을 사용해 별도로 확인해야 합니다.
+Redis health check는 `REDIS_URL`의 ACL 사용자·비밀번호·TLS·DB 설정으로 실제 `PING` 명령을
+실행합니다. TCP 터널만 열려 있거나 인증에 실패하거나 제한시간 안에 응답하지 않으면 Redis를
+`disconnected`로 보고하며 전체 E2E 상태도 연결 실패로 처리합니다.
 
 ### Backend 오프라인 모드
 

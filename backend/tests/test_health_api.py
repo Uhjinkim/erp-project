@@ -1,7 +1,63 @@
 from unittest.mock import patch
 
 from django.test import override_settings
+from redis.exceptions import AuthenticationError, TimeoutError
 from rest_framework.test import APIClient
+
+from config.health import _check_redis
+
+
+@override_settings(
+    REDIS_URL="redis://health-user:health-password@127.0.0.1:6379/0",
+    HEALTH_CHECK_TIMEOUT_SECONDS=0.25,
+)
+@patch("config.health.Redis.from_url")
+def test_redis_health_uses_configured_url_and_ping(from_url) -> None:
+    client = from_url.return_value
+    client.ping.return_value = True
+
+    assert _check_redis() == {"status": "connected"}
+    from_url.assert_called_once_with(
+        "redis://health-user:health-password@127.0.0.1:6379/0",
+        socket_connect_timeout=0.25,
+        socket_timeout=0.25,
+    )
+    client.ping.assert_called_once_with()
+    client.close.assert_called_once_with()
+
+
+@override_settings(DEBUG=False, REDIS_URL="redis://127.0.0.1:6379/0")
+@patch("config.health.Redis.from_url")
+def test_redis_health_reports_authentication_failure(from_url) -> None:
+    client = from_url.return_value
+    client.ping.side_effect = AuthenticationError("invalid credentials")
+
+    assert _check_redis() == {"status": "disconnected", "detail": "AuthenticationError"}
+    client.close.assert_called_once_with()
+
+
+@override_settings(DEBUG=False, REDIS_URL="redis://127.0.0.1:6379/0")
+@patch("config.health.Redis.from_url")
+def test_redis_health_reports_timeout(from_url) -> None:
+    client = from_url.return_value
+    client.ping.side_effect = TimeoutError("timed out")
+
+    assert _check_redis() == {"status": "disconnected", "detail": "TimeoutError"}
+    client.close.assert_called_once_with()
+
+
+@override_settings(REDIS_URL="")
+@patch("config.health.Redis.from_url")
+def test_redis_health_reports_missing_configuration(from_url) -> None:
+    assert _check_redis() == {"status": "not_configured"}
+    from_url.assert_not_called()
+
+
+@override_settings(DEBUG=False, REDIS_URL="redis://[")
+@patch("config.health.Redis.from_url")
+def test_redis_health_reports_invalid_configuration(from_url) -> None:
+    assert _check_redis() == {"status": "disconnected", "detail": "ValueError"}
+    from_url.assert_not_called()
 
 
 @patch("config.health._check_redis", return_value={"status": "connected"})

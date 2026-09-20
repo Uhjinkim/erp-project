@@ -10,6 +10,7 @@ dependencies = [
     "djangorestframework>=3.16,<4",
     "djangorestframework-stubs>=3.18.1",
     "psycopg[binary]>=3.2,<4",
+    "redis>=8.1,<9",
 ]
 
 [dependency-groups]

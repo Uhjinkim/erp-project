@@ -1,9 +1,9 @@
-import socket
 from typing import TypedDict
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.db import connection
+from redis import Redis
 
 
 class ServiceHealth(TypedDict, total=False):
@@ -28,20 +28,25 @@ def _check_database() -> ServiceHealth:
 
 
 def _check_redis() -> ServiceHealth:
-    redis_url = urlparse(settings.REDIS_URL)
-    if not redis_url.hostname:
-        return {"status": "not_configured"}
-
-    port = redis_url.port or (6380 if redis_url.scheme == "rediss" else 6379)
+    client: Redis | None = None
     try:
-        with socket.create_connection(
-            (redis_url.hostname, port),
-            timeout=settings.HEALTH_CHECK_TIMEOUT_SECONDS,
-        ):
-            pass
+        redis_url = urlparse(settings.REDIS_URL)
+        if not redis_url.hostname:
+            return {"status": "not_configured"}
+
+        client = Redis.from_url(
+            settings.REDIS_URL,
+            socket_connect_timeout=settings.HEALTH_CHECK_TIMEOUT_SECONDS,
+            socket_timeout=settings.HEALTH_CHECK_TIMEOUT_SECONDS,
+        )
+        if client.ping() is not True:
+            return {"status": "disconnected", "detail": "Unexpected PING response"}
         return {"status": "connected"}
-    except OSError as error:
+    except Exception as error:  # The health endpoint must report failures instead of crashing.
         return {"status": "disconnected", "detail": _failure_detail(error)}
+    finally:
+        if client is not None:
+            client.close()
 
 
 def _check_workforce() -> ServiceHealth:
