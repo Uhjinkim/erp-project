@@ -4,6 +4,8 @@ from workforce.domain.policies import choose_vacation_approver
 
 HR_MANAGER_ROLE = "HR_MANAGER"
 HR_LEAVE_APPROVER_ROLE = "HR_LEAVE_APPROVER"
+MANAGEMENT_OFFICER_ROLE = "MANAGEMENT_OFFICER"
+PAYROLL_MANAGER_ROLE = "PAYROLL_MANAGER"
 
 
 def employee_has_role(

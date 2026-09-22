@@ -27,4 +27,5 @@ MIGRATION_MODULES = {
     "accounts": None,
     "vacation": None,
     "workforce": None,
+    "board": None,
 }

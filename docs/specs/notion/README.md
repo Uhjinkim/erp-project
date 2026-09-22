@@ -11,5 +11,6 @@ Markdown 스냅샷이다. Notion이 원문(source of truth)이며, 코드 변경
 - [04. 핵심 기능 상세](./04-detailed-features.md)
 - [05. 미확정 정책](./05-open-policies.md)
 - [workforce 구현 대응표](./workforce-implementation-map.md)
+- [board 구현 대응표](./board-implementation-map.md)
 
-마지막 원문 확인일: 2026-09-19
+마지막 원문 확인일: 2026-09-22
