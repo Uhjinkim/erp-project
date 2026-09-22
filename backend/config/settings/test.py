@@ -23,8 +23,12 @@ VACATION_INTEGRATION_READY = True
 VACATION_DEVELOPMENT_EMPLOYEES = DEVELOPMENT_EMPLOYEES
 
 # Legacy-table migrations are state-only in real environments. Tests create their tables directly.
+# payroll has no legacy table, but its models carry a foreign key into workforce.Employee, so its
+# migration graph must be skipped here too, or Django cannot resolve that cross-app dependency
+# against the unmigrated workforce app.
 MIGRATION_MODULES = {
     "accounts": None,
     "vacation": None,
     "workforce": None,
+    "payroll": None,
 }

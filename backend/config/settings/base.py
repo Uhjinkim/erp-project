@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "accounts.apps.AccountsConfig",
     "workforce.apps.WorkforceConfig",
     "vacation.apps.VacationConfig",
+    "payroll.apps.PayrollConfig",
 ]
 
 MIDDLEWARE = [
