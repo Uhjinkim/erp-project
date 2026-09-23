@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from payroll.domain.entities import (
@@ -21,6 +21,7 @@ class CreateStatementCommand:
     employee_no: int
     year: int
     month: int
+    items: list[PayrollItemInput] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,6 @@ def statement_to_dict(statement: PayrollStatement) -> dict[str, object]:
         "total_earnings": statement.total_earnings,
         "total_deductions": statement.total_deductions,
         "net_pay": statement.net_pay,
-        "created_by": statement.created_by,
         "confirmed_by": statement.confirmed_by,
         "confirmed_at": statement.confirmed_at,
     }
@@ -77,7 +77,6 @@ def history_to_dict(history: PayrollHistory) -> dict[str, object]:
         "action": history.action.value,
         "actor_employee_no": history.actor_employee_no,
         "reason": history.reason,
-        "change_summary": history.change_summary,
         "changed_at": history.changed_at,
     }
 

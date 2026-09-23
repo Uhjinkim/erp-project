@@ -4,7 +4,6 @@ from decimal import Decimal
 from enum import StrEnum
 
 from payroll.domain.exceptions import EmptyPayrollItemsError, InvalidPayrollTransitionError
-from payroll.domain.policies import round_up_to_won
 from payroll.domain.value_objects import PayPeriod
 
 
@@ -19,8 +18,11 @@ class ComponentCategory(StrEnum):
 
 
 class PayrollAction(StrEnum):
-    CREATED = "생성"
-    ITEMS_UPDATED = "구성항목 수정"
+    """Mirrors the `chk_payroll_history_action` CHECK constraint on the legacy
+    `payroll_history` table, which allows exactly these four values. Statement
+    creation itself is not one of them and is therefore never recorded here."""
+
+    ITEMS_UPDATED = "수정"
     CONFIRMED = "확정"
     CONFIRMATION_CANCELLED = "확정취소"
     RECONFIRMED = "재확정"
@@ -49,7 +51,6 @@ class PayrollStatement:
     period: PayPeriod
     payment_date: date
     status: PayrollStatus
-    created_by: int
     items: list[PayrollItem] = field(default_factory=list)
     confirmed_by: int | None = None
     confirmed_at: datetime | None = None
@@ -70,7 +71,12 @@ class PayrollStatement:
 
     @property
     def net_pay(self) -> Decimal:
-        return round_up_to_won(self.total_earnings - self.total_deductions)
+        # The legacy `payrolls` table enforces `net_pay = total_pay - total_deduct` exactly
+        # (chk_payrolls_net_pay), so no independent rounding step may be applied here. PY-009's
+        # round-up rule only matters for foreign-currency fractions, which this system does not
+        # yet accept as input; if that need arises, the rounding must happen when the amount is
+        # entered, not here.
+        return self.total_earnings - self.total_deductions
 
     def replace_items(self, items: list[PayrollItem]) -> None:
         self._require_status(PayrollStatus.DRAFT, "확정된 급여는 직접 수정할 수 없습니다.")
@@ -108,4 +114,3 @@ class PayrollHistory:
     actor_employee_no: int
     changed_at: datetime
     reason: str | None = None
-    change_summary: str | None = None

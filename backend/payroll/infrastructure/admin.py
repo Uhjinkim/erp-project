@@ -2,8 +2,8 @@ from django.contrib import admin
 
 from payroll.infrastructure.models import (
     PayrollComponentTypeModel,
+    PayrollDetailModel,
     PayrollHistoryModel,
-    PayrollItemModel,
     PayrollStatementModel,
     PublicHolidayModel,
 )
@@ -12,7 +12,7 @@ admin.site.register(
     [
         PayrollComponentTypeModel,
         PayrollStatementModel,
-        PayrollItemModel,
+        PayrollDetailModel,
         PayrollHistoryModel,
         PublicHolidayModel,
     ]

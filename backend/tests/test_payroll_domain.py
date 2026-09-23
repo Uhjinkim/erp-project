@@ -5,7 +5,7 @@ import pytest
 
 from payroll.domain.entities import ComponentCategory, PayrollItem, PayrollStatement, PayrollStatus
 from payroll.domain.exceptions import EmptyPayrollItemsError, InvalidPayrollTransitionError
-from payroll.domain.policies import resolve_payment_date, round_up_to_won
+from payroll.domain.policies import resolve_payment_date
 from payroll.domain.value_objects import PayPeriod
 
 
@@ -32,14 +32,15 @@ def statement(
         period=PayPeriod.of(2026, 9),
         payment_date=date(2026, 9, 25),
         status=status,
-        created_by=9001,
         items=items or [],
     )
 
 
-def test_net_pay_rounds_up_to_the_won() -> None:
-    item = statement(items=[earning("3000000.4"), deduction("100000")])
-    assert item.net_pay == Decimal("2900001")
+def test_net_pay_is_the_exact_difference_between_earnings_and_deductions() -> None:
+    # The shared `payrolls` table enforces net_pay = total_pay - total_deduct exactly
+    # (chk_payrolls_net_pay), so this must never apply independent rounding.
+    item = statement(items=[earning("3000000"), deduction("100000")])
+    assert item.net_pay == Decimal("2900000")
 
 
 def test_confirm_requires_at_least_one_item() -> None:
@@ -80,16 +81,10 @@ def test_resolve_payment_date_moves_weekend_settlement_back_to_the_previous_busi
     # 2026-09-25 falls on a Friday, so it should not move.
     assert resolve_payment_date(PayPeriod.of(2026, 9)) == date(2026, 9, 25)
 
-    # 2027-01-25 falls on a Monday; 2027-02-25 falls on a Thursday. Pick a month where the
-    # 25th lands on a weekend: 2026-10-25 is a Sunday.
+    # 2026-10-25 falls on a Sunday, so it moves back through Saturday to Friday the 23rd.
     assert resolve_payment_date(PayPeriod.of(2026, 10)) == date(2026, 10, 23)
 
 
 def test_resolve_payment_date_skips_registered_holidays_too() -> None:
     holidays = frozenset({date(2026, 9, 25)})
     assert resolve_payment_date(PayPeriod.of(2026, 9), holidays) == date(2026, 9, 24)
-
-
-def test_round_up_to_won_only_affects_fractional_amounts() -> None:
-    assert round_up_to_won(Decimal("100000")) == Decimal("100000")
-    assert round_up_to_won(Decimal("100000.01")) == Decimal("100001")

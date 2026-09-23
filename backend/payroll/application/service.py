@@ -54,25 +54,20 @@ class PayrollService:
             payment_date = resolve_payment_date(
                 period, self.holidays.holidays_in(period.year, period.month)
             )
-            statement = uow.statements.add(
+            items = [self._resolve_item(uow, entry) for entry in command.items]
+            # The legacy `payroll_history` table's action CHECK constraint has no "생성" value,
+            # so creation itself is not recorded there (only 확정/확정취소/재확정/수정 are) —
+            # even when items are supplied up front, this is still the initial state, not an edit.
+            return uow.statements.add(
                 PayrollStatement(
                     statement_id=None,
                     employee_no=command.employee_no,
                     period=period,
                     payment_date=payment_date,
                     status=PayrollStatus.DRAFT,
-                    created_by=command.actor_employee_no,
+                    items=items,
                 )
             )
-            self._record(
-                uow,
-                statement,
-                PayrollAction.CREATED,
-                command.actor_employee_no,
-                reason=None,
-                change_summary=f"{period.year}년 {period.month}월 급여 생성",
-            )
-            return statement
 
     def update_items(self, command: UpdateItemsCommand) -> PayrollStatement:
         self._require_manager(command.actor_employee_no)
@@ -86,8 +81,7 @@ class PayrollService:
                 statement,
                 PayrollAction.ITEMS_UPDATED,
                 command.actor_employee_no,
-                reason=None,
-                change_summary=self._items_summary(items),
+                reason=self._items_summary(items),
             )
             return statement
 
@@ -103,8 +97,7 @@ class PayrollService:
                 statement,
                 action,
                 command.actor_employee_no,
-                reason=None,
-                change_summary=f"지급액 {statement.net_pay}원 확정",
+                reason=f"지급액 {statement.net_pay}원 확정",
             )
             return statement
 
@@ -120,7 +113,6 @@ class PayrollService:
                 PayrollAction.CONFIRMATION_CANCELLED,
                 command.actor_employee_no,
                 reason=command.reason,
-                change_summary=None,
             )
             return statement
 
@@ -166,7 +158,9 @@ class PayrollService:
         )
 
     def _items_summary(self, items: list[PayrollItem]) -> str:
-        return ", ".join(f"{item.component_code}={item.amount}" for item in items)
+        # `payroll_history.reason` is varchar(255) in the shared database.
+        summary = ", ".join(f"{item.component_code}={item.amount}" for item in items)
+        return summary if len(summary) <= 255 else summary[:252] + "..."
 
     def _record(
         self,
@@ -176,7 +170,6 @@ class PayrollService:
         actor: int,
         *,
         reason: str | None,
-        change_summary: str | None,
     ) -> None:
         if statement.statement_id is None:
             raise RuntimeError("저장된 급여에 ID가 없습니다.")
@@ -188,7 +181,6 @@ class PayrollService:
                 actor_employee_no=actor,
                 changed_at=self.clock(),
                 reason=reason,
-                change_summary=change_summary,
             )
         )
 

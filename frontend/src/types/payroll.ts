@@ -15,9 +15,16 @@ export type PayrollItem = {
   amount: number
 }
 
+export type PayrollEmployeeSummary = {
+  emp_no: number | null
+  name: string | null
+  position_name: string | null
+}
+
 export type PayrollStatement = {
   statement_id: number
   employee_no: number
+  employee: PayrollEmployeeSummary
   year: number
   month: number
   payment_date: string
@@ -26,7 +33,6 @@ export type PayrollStatement = {
   total_earnings: number
   total_deductions: number
   net_pay: number
-  created_by: number
   confirmed_by: number | null
   confirmed_at: string | null
 }
@@ -37,6 +43,5 @@ export type PayrollHistoryEntry = {
   action: string
   actor_employee_no: number
   reason: string | null
-  change_summary: string | null
   changed_at: string
 }

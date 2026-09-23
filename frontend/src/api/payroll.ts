@@ -19,11 +19,16 @@ export async function loadAllPayrollStatements(): Promise<PayrollStatement[]> {
   return requestJson<PayrollStatement[]>("/api/payroll/statements/?all=true")
 }
 
-export async function createPayrollStatement(empNo: number, year: number, month: number): Promise<PayrollStatement> {
+export async function createPayrollStatement(
+  empNo: number,
+  year: number,
+  month: number,
+  items: Pick<PayrollItem, "component_code" | "amount">[] = [],
+): Promise<PayrollStatement> {
   return requestJson<PayrollStatement>("/api/payroll/statements/", {
     method: "POST",
     headers: jsonHeaders,
-    body: JSON.stringify({ emp_no: empNo, year, month }),
+    body: JSON.stringify({ emp_no: empNo, year, month, items }),
   })
 }
 

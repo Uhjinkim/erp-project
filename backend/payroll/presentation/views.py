@@ -32,7 +32,38 @@ from payroll.presentation.serializers import (
     ReasonSerializer,
     UpdateItemsSerializer,
 )
+from workforce.infrastructure.models import Employee
 from workforce.presentation.permissions import request_employee_no
+
+
+def _employee_summaries(employee_nos: set[int]) -> dict[int, dict[str, object]]:
+    employees = Employee.objects.select_related("person", "position").filter(
+        employee_no__in=employee_nos
+    )
+    return {
+        employee.employee_no: {
+            "emp_no": employee.employee_no,
+            "name": employee.person.name,
+            "position_name": employee.position.position_name if employee.position else None,
+        }
+        for employee in employees
+    }
+
+
+def _serialize_statements(statements: list) -> list[dict[str, object]]:
+    summaries = _employee_summaries({statement.employee_no for statement in statements})
+    unknown = {"emp_no": None, "name": None, "position_name": None}
+    result = []
+    for statement in statements:
+        employee = summaries.get(
+            statement.employee_no, {**unknown, "emp_no": statement.employee_no}
+        )
+        result.append({**statement_to_dict(statement), "employee": employee})
+    return result
+
+
+def _serialize_statement(statement) -> dict[str, object]:
+    return _serialize_statements([statement])[0]
 
 
 class PayrollAPIView(APIView):
@@ -86,7 +117,7 @@ class StatementListCreateView(PayrollAPIView):
                 items = self.service.list_for_employee(None, employee_no)
             else:
                 items = self.service.list_mine(employee_no)
-            return Response([statement_to_dict(item) for item in items])
+            return Response(_serialize_statements(items))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -94,6 +125,10 @@ class StatementListCreateView(PayrollAPIView):
         serializer = CreateStatementSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        input_items = [
+            PayrollItemInput(component_code=entry["component_code"], amount=entry["amount"])
+            for entry in data["items"]
+        ]
         try:
             item = self.service.create_statement(
                 CreateStatementCommand(
@@ -101,9 +136,10 @@ class StatementListCreateView(PayrollAPIView):
                     employee_no=data["emp_no"],
                     year=data["year"],
                     month=data["month"],
+                    items=input_items,
                 )
             )
-            return Response(statement_to_dict(item), status=status.HTTP_201_CREATED)
+            return Response(_serialize_statement(item), status=status.HTTP_201_CREATED)
         except PayrollError as error:
             return self.error_response(error)
 
@@ -112,7 +148,7 @@ class StatementDetailView(PayrollAPIView):
     def get(self, request: Request, statement_id: int) -> Response:
         try:
             item = self.service.get(statement_id, self.employee_no(request))
-            return Response(statement_to_dict(item))
+            return Response(_serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -135,7 +171,7 @@ class ItemsUpdateView(PayrollAPIView):
                     items=items,
                 )
             )
-            return Response(statement_to_dict(item))
+            return Response(_serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -150,7 +186,7 @@ class ConfirmView(PayrollAPIView):
                     actor_employee_no=self.employee_no(request), statement_id=statement_id
                 )
             )
-            return Response(statement_to_dict(item))
+            return Response(_serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -169,7 +205,7 @@ class CancelConfirmationView(PayrollAPIView):
                     reason=serializer.validated_data["reason"],
                 )
             )
-            return Response(statement_to_dict(item))
+            return Response(_serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 

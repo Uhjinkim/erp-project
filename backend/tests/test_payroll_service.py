@@ -193,7 +193,7 @@ def test_confirm_cancel_and_reconfirm_are_all_recorded_as_history() -> None:
     payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
 
     actions = [entry.action.value for entry in uow.histories.list_for_statement(statement_id)]
-    assert actions == ["생성", "구성항목 수정", "확정", "확정취소", "재확정"]
+    assert actions == ["수정", "확정", "확정취소", "재확정"]
 
 
 def test_employee_can_view_only_their_own_statement() -> None:

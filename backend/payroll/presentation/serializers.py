@@ -3,15 +3,16 @@ from decimal import Decimal
 from rest_framework import serializers
 
 
+class PayrollItemInputSerializer(serializers.Serializer):
+    component_code = serializers.CharField(max_length=30)
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal("0"))
+
+
 class CreateStatementSerializer(serializers.Serializer):
     emp_no = serializers.IntegerField()
     year = serializers.IntegerField(min_value=2000, max_value=2100)
     month = serializers.IntegerField(min_value=1, max_value=12)
-
-
-class PayrollItemInputSerializer(serializers.Serializer):
-    component_code = serializers.CharField(max_length=30)
-    amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal("0"))
+    items = PayrollItemInputSerializer(many=True, required=False, default=list)
 
 
 class UpdateItemsSerializer(serializers.Serializer):

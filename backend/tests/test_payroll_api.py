@@ -29,11 +29,9 @@ def create_user(employee: Employee, email: str) -> User:
 
 
 def seed_components() -> None:
+    PayrollComponentTypeModel.objects.create(code="BASE_PAY", name="기본급", category="지급")
     PayrollComponentTypeModel.objects.create(
-        code="BASE_PAY", name="기본급", category="지급", sort_order=10
-    )
-    PayrollComponentTypeModel.objects.create(
-        code="NATIONAL_PENSION", name="국민연금", category="공제", sort_order=40
+        code="NATIONAL_PENSION", name="국민연금", category="공제"
     )
 
 
@@ -130,13 +128,51 @@ def test_full_create_edit_confirm_cancel_reconfirm_flow_via_api() -> None:
 
     history = client.get(f"/api/payroll/statements/{statement_id}/history/")
     assert [entry["action"] for entry in history.json()] == [
-        "생성",
-        "구성항목 수정",
+        "수정",
         "확정",
         "확정취소",
-        "구성항목 수정",
+        "수정",
         "재확정",
     ]
+
+
+@pytest.mark.django_db
+def test_create_statement_accepts_items_up_front_and_returns_employee_summary() -> None:
+
+    employee = create_employee(1001, "employee@example.com")
+    manager = create_employee(9001, "manager@example.com")
+    create_user(employee, "employee@example.com")
+    manager_user = create_user(manager, "manager@example.com")
+    role = Role.objects.create(role_code="PAYROLL_MANAGER", role_name="급여 담당자")
+    manager.role_assignments.create(role=role, assigned_at=timezone.now())
+    seed_components()
+
+    client = APIClient()
+    client.force_authenticate(manager_user)
+    created = client.post(
+        "/api/payroll/statements/",
+        {
+            "emp_no": 1001,
+            "year": 2026,
+            "month": 9,
+            "items": [
+                {"component_code": "BASE_PAY", "amount": "3000000"},
+                {"component_code": "NATIONAL_PENSION", "amount": "135000"},
+            ],
+        },
+        format="json",
+    )
+
+    assert created.status_code == 201, created.data
+    assert created.json()["net_pay"] == 2865000.0
+    assert created.json()["employee"] == {
+        "emp_no": 1001,
+        "name": "사원 1001",
+        "position_name": "사원",
+    }
+
+    history = client.get(f"/api/payroll/statements/{created.json()['statement_id']}/history/")
+    assert history.json() == []
 
 
 @pytest.mark.django_db
