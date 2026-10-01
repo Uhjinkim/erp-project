@@ -76,7 +76,7 @@ function Stop-ProcessTree {
 
 Assert-Command -Name "uv" -InstallationHint "Install uv before starting the backend."
 Assert-Command -Name "bun" -InstallationHint "Install Bun before starting the frontend."
-Assert-Command -Name "nginx" -InstallationHint "Install nginx and add nginx.exe to PATH."
+Assert-Command -Name "nginx" -InstallationHint "Install nginx with 'winget install nginxinc.nginx', then open a new PowerShell session."
 
 $nginxPort = ConvertTo-ValidatedPort -Name "ERP_DEV_NGINX_PORT" -Value $nginxPort
 $backendPort = ConvertTo-ValidatedPort -Name "ERP_DEV_BACKEND_PORT" -Value $backendPort
@@ -110,6 +110,17 @@ $frontendProcess = $null
 $nginxProcess = $null
 
 try {
+    foreach ($directoryName in @(
+        "logs",
+        "client_body_temp",
+        "proxy_temp",
+        "fastcgi_temp",
+        "uwsgi_temp",
+        "scgi_temp"
+    )) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $runtimeDir $directoryName) -Force
+    }
+
     $config = [System.IO.File]::ReadAllText($nginxTemplate)
     $config = $config.Replace("__NGINX_PORT__", [string]$nginxPort)
     $config = $config.Replace("__BACKEND_PORT__", [string]$backendPort)
