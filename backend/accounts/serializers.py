@@ -1,10 +1,16 @@
+from dataclasses import asdict
+
 from django.contrib.auth import authenticate
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.models import User
-from workforce.application.services import HR_MANAGER_ROLE, employee_has_role
+from workforce.application.services import (
+    HR_MANAGER_ROLE,
+    employee_has_role,
+    get_employee_profile,
+)
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
 from workforce.infrastructure.models import Employee
 
@@ -36,18 +42,14 @@ class CurrentUserSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "is_staff", "is_superuser", "employee", "roles"]
 
     def get_employee(self, user: User) -> dict[str, object] | None:
-        employee: Employee | None = user.employee
-        if employee is None:
+        if user.employee_id is None:
             return None
-        return {
-            "emp_no": employee.employee_no,
-            "name": employee.person.name,
-            "dept_no": employee.department_id,
-            "dept_name": employee.department.dept_name if employee.department else None,
-            "position_code": employee.position_id,
-            "position_name": employee.position.position_name if employee.position else None,
-            "tenure_status": employee.tenure_status,
-        }
+        profile = get_employee_profile(user.employee_id, DjangoWorkforceQueryGateway())
+        if profile is None:
+            return None
+        data = asdict(profile)
+        data["emp_no"] = data.pop("employee_no")
+        return data
 
     def get_roles(self, user: User) -> list[str]:
         if user.employee_id is None:

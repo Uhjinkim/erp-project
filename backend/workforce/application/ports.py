@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from workforce.domain.policies import EmployeeCandidate
+from workforce.domain.policies import EmployeeCandidate, EmployeeProfile
 
 
 class WorkforceQueryGateway(Protocol):
@@ -9,6 +9,10 @@ class WorkforceQueryGateway(Protocol):
     def department_head(self, employee_no: int) -> EmployeeCandidate | None: ...
 
     def active_role_holders(self, role_code: str, *, limit: int) -> list[EmployeeCandidate]: ...
+
+
+class EmployeeProfileGateway(Protocol):
+    def employee_profile(self, employee_no: int) -> EmployeeProfile | None: ...
 
 
 class RoleCommandGateway(Protocol):

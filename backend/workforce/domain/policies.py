@@ -8,6 +8,27 @@ class EmployeeCandidate:
     is_active: bool
 
 
+@dataclass(frozen=True)
+class EmployeeProfile:
+    employee_no: int
+    name: str
+    birth_date: date | None
+    gender: str | None
+    dept_no: int | None
+    dept_name: str | None
+    position_code: str | None
+    position_name: str | None
+    tenure_status: str
+    email: str | None
+    phone: str | None
+    extension_no: str | None
+    address: str | None
+    bank_code: str | None
+    account_no: str | None
+    hire_date: date
+    term_date: date | None
+
+
 def validate_employment_dates(
     *,
     tenure_status: str,

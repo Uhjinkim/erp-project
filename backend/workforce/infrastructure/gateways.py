@@ -1,11 +1,37 @@
 from django.db.models import Q
 from django.utils import timezone
 
-from workforce.domain.policies import EmployeeCandidate
+from workforce.domain.policies import EmployeeCandidate, EmployeeProfile
 from workforce.infrastructure.models import Employee, EmployeeRole
 
 
 class DjangoWorkforceQueryGateway:
+    def employee_profile(self, employee_no: int) -> EmployeeProfile | None:
+        employee = Employee.objects.select_related("person", "department", "position").filter(
+            employee_no=employee_no
+        ).first()
+        if employee is None:
+            return None
+        return EmployeeProfile(
+            employee_no=employee.employee_no,
+            name=employee.person.name,
+            birth_date=employee.person.birth_date,
+            gender=employee.person.gender,
+            dept_no=employee.department_id,
+            dept_name=employee.department.dept_name if employee.department else None,
+            position_code=employee.position_id,
+            position_name=employee.position.position_name if employee.position else None,
+            tenure_status=employee.tenure_status,
+            email=employee.email,
+            phone=employee.phone,
+            extension_no=employee.extension_no,
+            address=employee.address,
+            bank_code=employee.bank_code,
+            account_no=employee.account_no,
+            hire_date=employee.hire_date,
+            term_date=employee.term_date,
+        )
+
     def has_active_role(self, employee_no: int, role_code: str) -> bool:
         now = timezone.now()
         return (
