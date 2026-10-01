@@ -25,10 +25,10 @@ class BoardService:
         self.clock = clock
 
     def create_post(self, command: CreatePostCommand) -> Post:
-        self._ensure_active(command.author_employee_no)
+        self._ensure_active(command.writer_employee_no)
         notice_category = command.notice_category
         if command.post_type == PostType.NOTICE:
-            eligible = self.workforce.eligible_notice_categories(command.author_employee_no)
+            eligible = self.workforce.eligible_notice_categories(command.writer_employee_no)
             if notice_category is None or notice_category not in eligible:
                 raise NoticeCategoryNotAllowedError(
                     "해당 업무 분류의 공지를 작성할 권한이 없습니다."
@@ -36,16 +36,15 @@ class BoardService:
         elif notice_category is not None:
             raise InvalidPostContentError("일반 게시글은 업무 분류를 가질 수 없습니다.")
 
-        now = self.clock()
         post = Post(
             post_id=None,
-            author_employee_no=command.author_employee_no,
+            writer_employee_no=command.writer_employee_no,
             post_type=command.post_type,
             notice_category=notice_category,
             title=command.title,
             content=command.content,
-            created_at=now,
-            updated_at=now,
+            created_at=self.clock(),
+            updated_at=None,
         )
         return self.repository.add(post)
 

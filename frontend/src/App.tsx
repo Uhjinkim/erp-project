@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 
 import { getCurrentUser, loginWithEmail, logoutSession } from "./api/auth"
 import { ApiError, requestJson } from "./api/client"
+import { BoardPanel } from "./components/BoardPanel"
 import { ConnectionStatus } from "./components/ConnectionStatus"
 import { LoginPanel } from "./components/LoginPanel"
 import { WorkforcePanel } from "./components/WorkforcePanel"
@@ -45,7 +46,7 @@ function VacationApp({ currentUser, onSessionExpired, onLogout }: VacationAppPro
   const [mine, setMine] = useState<VacationRequest[]>([])
   const [approvals, setApprovals] = useState<VacationRequest[]>([])
   const [tab, setTab] = useState<"mine" | "approvals">("mine")
-  const [module, setModule] = useState<"vacation" | "workforce">("vacation")
+  const [module, setModule] = useState<"vacation" | "board" | "workforce">("vacation")
   const [form, setForm] = useState(initialForm)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [message, setMessage] = useState("")
@@ -198,6 +199,7 @@ function VacationApp({ currentUser, onSessionExpired, onLogout }: VacationAppPro
       {!developmentIdentity && (
         <nav className="module-nav" aria-label="업무 모듈">
           <button className={module === "vacation" ? "active" : ""} type="button" onClick={() => setModule("vacation")}>휴가</button>
+          <button className={module === "board" ? "active" : ""} type="button" onClick={() => setModule("board")}>게시판</button>
           <button className={module === "workforce" ? "active" : ""} type="button" onClick={() => setModule("workforce")}>사원·부서</button>
         </nav>
       )}
@@ -235,6 +237,9 @@ function VacationApp({ currentUser, onSessionExpired, onLogout }: VacationAppPro
           </div>
         </section>
       </section>}
+      {module === "board" && currentUser && (
+        <BoardPanel enabled={connected} currentUser={currentUser} />
+      )}
       {module === "workforce" && currentUser && (
         <WorkforcePanel enabled={connected} currentUser={currentUser} />
       )}

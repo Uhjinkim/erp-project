@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
+from board.infrastructure.models import NoticeCategoryModel
 from workforce.application.services import PAYROLL_MANAGER_ROLE
 from workforce.infrastructure.models import (
     Department,
@@ -53,6 +54,13 @@ def assign_role(employee: Employee, role_code: str, role_name: str) -> None:
     EmployeeRole.objects.create(employee=employee, role=role, assigned_at=timezone.now())
 
 
+def create_notice_category(code: str, name: str) -> NoticeCategoryModel:
+    category, _ = NoticeCategoryModel.objects.get_or_create(
+        notice_category_code=code, defaults={"category_name": name}
+    )
+    return category
+
+
 @pytest.mark.django_db
 def test_active_employee_can_create_and_read_general_post() -> None:
     employee = create_employee(1001, "writer@example.com")
@@ -88,7 +96,7 @@ def test_employee_without_role_cannot_write_hr_notice() -> None:
         "/api/board/posts/",
         {
             "post_type": "공지",
-            "notice_category": "인사",
+            "notice_category": "HR",
             "title": "인사 공지",
             "content": "본문",
         },
@@ -99,6 +107,7 @@ def test_employee_without_role_cannot_write_hr_notice() -> None:
 
 @pytest.mark.django_db
 def test_payroll_manager_can_write_payroll_notice_visible_to_others() -> None:
+    create_notice_category("PAYROLL", "급여")
     payroll_employee = create_employee(9001, "payroll@example.com")
     assign_role(payroll_employee, PAYROLL_MANAGER_ROLE, "급여 담당자")
     payroll_user = create_user(payroll_employee)
@@ -112,7 +121,7 @@ def test_payroll_manager_can_write_payroll_notice_visible_to_others() -> None:
         "/api/board/posts/",
         {
             "post_type": "공지",
-            "notice_category": "급여",
+            "notice_category": "PAYROLL",
             "title": "급여 지급 안내",
             "content": "본문",
         },
@@ -123,7 +132,7 @@ def test_payroll_manager_can_write_payroll_notice_visible_to_others() -> None:
     client.force_authenticate(viewer_user)
     detail = client.get(f"/api/board/posts/{created.data['post_id']}/")
     assert detail.status_code == 200
-    assert detail.data["notice_category"] == "급여"
+    assert detail.data["notice_category"] == "PAYROLL"
 
 
 @pytest.mark.django_db
@@ -171,3 +180,68 @@ def test_only_author_or_admin_can_edit_or_delete() -> None:
 
     not_found = client.get(f"/api/board/posts/{post_id}/")
     assert not_found.status_code == 404
+
+
+@pytest.mark.django_db
+def test_comment_and_reply_flow() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    other = create_employee(2002, "other@example.com")
+    other_user = create_user(other)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    post = client.post(
+        "/api/board/posts/",
+        {"post_type": "일반", "title": "제목", "content": "내용"},
+        format="json",
+    )
+    post_id = post.data["post_id"]
+
+    comment = client.post(
+        f"/api/board/posts/{post_id}/comments/", {"content": "첫 댓글"}, format="json"
+    )
+    assert comment.status_code == 201, comment.data
+    assert comment.data["writer_name"] == "사원 1001"
+
+    client.force_authenticate(other_user)
+    reply = client.post(
+        f"/api/board/posts/{post_id}/comments/",
+        {"content": "답글입니다", "parent_comment_id": comment.data["comment_id"]},
+        format="json",
+    )
+    assert reply.status_code == 201, reply.data
+
+    nested_reply = client.post(
+        f"/api/board/posts/{post_id}/comments/",
+        {"content": "답글의 답글", "parent_comment_id": reply.data["comment_id"]},
+        format="json",
+    )
+    assert nested_reply.status_code == 400
+
+    listing = client.get(f"/api/board/posts/{post_id}/comments/")
+    assert listing.status_code == 200
+    assert len(listing.data) == 2
+
+    denied_edit = client.patch(
+        f"/api/board/comments/{comment.data['comment_id']}/",
+        {"content": "변경 시도"},
+        format="json",
+    )
+    assert denied_edit.status_code == 403
+
+    client.force_authenticate(author_user)
+    edited = client.patch(
+        f"/api/board/comments/{comment.data['comment_id']}/",
+        {"content": "수정된 댓글"},
+        format="json",
+    )
+    assert edited.status_code == 200
+    assert edited.data["content"] == "수정된 댓글"
+
+    deleted = client.delete(f"/api/board/comments/{comment.data['comment_id']}/")
+    assert deleted.status_code == 204
+
+    listing_after_delete = client.get(f"/api/board/posts/{post_id}/comments/")
+    assert listing_after_delete.status_code == 200
+    assert len(listing_after_delete.data) == 1

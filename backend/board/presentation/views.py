@@ -7,18 +7,32 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from board.application.dto import CreatePostCommand, UpdatePostCommand, post_to_dict
+from board.application.comment_service import CommentService
+from board.application.dto import (
+    CreateCommentCommand,
+    CreatePostCommand,
+    UpdateCommentCommand,
+    UpdatePostCommand,
+    comment_to_dict,
+    post_to_dict,
+)
 from board.application.service import BoardService
 from board.domain.entities import NoticeCategory, PostType
 from board.domain.exceptions import (
     BoardError,
     BoardPermissionError,
+    CommentNotFoundError,
     NoticeCategoryNotAllowedError,
     PostNotFoundError,
 )
-from board.infrastructure.repositories import DjangoPostRepository
+from board.infrastructure.repositories import DjangoCommentRepository, DjangoPostRepository
 from board.infrastructure.workforce_gateways import DjangoWorkforceGateway
-from board.presentation.serializers import PostCreateSerializer, PostUpdateSerializer
+from board.presentation.serializers import (
+    CommentCreateSerializer,
+    CommentUpdateSerializer,
+    PostCreateSerializer,
+    PostUpdateSerializer,
+)
 from workforce.presentation.permissions import request_employee_no
 
 
@@ -29,6 +43,15 @@ class BoardAPIView(APIView):
     def service(self) -> BoardService:
         return BoardService(
             repository=DjangoPostRepository(),
+            workforce=DjangoWorkforceGateway(),
+            clock=timezone.now,
+        )
+
+    @cached_property
+    def comment_service(self) -> CommentService:
+        return CommentService(
+            comments=DjangoCommentRepository(),
+            posts=DjangoPostRepository(),
             workforce=DjangoWorkforceGateway(),
             clock=timezone.now,
         )
@@ -46,7 +69,7 @@ class BoardAPIView(APIView):
         response_status = status.HTTP_400_BAD_REQUEST
         if isinstance(error, (BoardPermissionError, NoticeCategoryNotAllowedError)):
             response_status = status.HTTP_403_FORBIDDEN
-        elif isinstance(error, PostNotFoundError):
+        elif isinstance(error, (PostNotFoundError, CommentNotFoundError)):
             response_status = status.HTTP_404_NOT_FOUND
         return Response({"code": error.code, "detail": str(error)}, status=response_status)
 
@@ -69,7 +92,7 @@ class PostListCreateView(BoardAPIView):
             notice_category = data.get("notice_category")
             item = self.service.create_post(
                 CreatePostCommand(
-                    author_employee_no=employee_no,
+                    writer_employee_no=employee_no,
                     post_type=PostType(data["post_type"]),
                     title=data["title"],
                     content=data["content"],
@@ -113,6 +136,62 @@ class PostDetailView(BoardAPIView):
         try:
             employee_no = self.employee_no(request)
             self.service.delete_post(post_id, employee_no, self.is_admin(request))
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except BoardError as error:
+            return self.error_response(error)
+
+
+class CommentListCreateView(BoardAPIView):
+    def get(self, request: Request, post_id: int) -> Response:
+        try:
+            employee_no = self.employee_no(request)
+            comments = self.comment_service.list_comments(post_id, employee_no)
+            return Response([comment_to_dict(comment) for comment in comments])
+        except BoardError as error:
+            return self.error_response(error)
+
+    def post(self, request: Request, post_id: int) -> Response:
+        serializer = CommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            employee_no = self.employee_no(request)
+            item = self.comment_service.create_comment(
+                CreateCommentCommand(
+                    post_id=post_id,
+                    writer_employee_no=employee_no,
+                    content=data["content"],
+                    parent_comment_id=data.get("parent_comment_id"),
+                )
+            )
+            return Response(comment_to_dict(item), status=status.HTTP_201_CREATED)
+        except BoardError as error:
+            return self.error_response(error)
+
+
+class CommentDetailView(BoardAPIView):
+    def patch(self, request: Request, comment_id: int) -> Response:
+        serializer = CommentUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            employee_no = self.employee_no(request)
+            item = self.comment_service.update_comment(
+                UpdateCommentCommand(
+                    comment_id=comment_id,
+                    actor_employee_no=employee_no,
+                    actor_is_admin=self.is_admin(request),
+                    content=data["content"],
+                )
+            )
+            return Response(comment_to_dict(item))
+        except BoardError as error:
+            return self.error_response(error)
+
+    def delete(self, request: Request, comment_id: int) -> Response:
+        try:
+            employee_no = self.employee_no(request)
+            self.comment_service.delete_comment(comment_id, employee_no, self.is_admin(request))
             return Response(status=status.HTTP_204_NO_CONTENT)
         except BoardError as error:
             return self.error_response(error)

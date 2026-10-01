@@ -1,5 +1,14 @@
 from django.db import models
-from django.db.models import Q
+
+from workforce.infrastructure.models import Employee
+
+
+class NoticeCategoryModel(models.Model):
+    notice_category_code = models.CharField(primary_key=True, max_length=20)
+    category_name = models.CharField(max_length=50)
+
+    class Meta:
+        db_table = "board_notice_categories"
 
 
 class PostModel(models.Model):
@@ -7,37 +16,60 @@ class PostModel(models.Model):
         GENERAL = "일반", "일반"
         NOTICE = "공지", "공지"
 
-    class NoticeCategory(models.TextChoices):
-        MANAGEMENT = "경영", "경영"
-        HR = "인사", "인사"
-        PAYROLL = "급여", "급여"
-        DEPARTMENT = "부서", "부서"
-
     post_id = models.BigAutoField(primary_key=True)
-    author_employee_no = models.IntegerField(db_column="author_emp_no")
-    post_type = models.CharField(max_length=10, choices=PostType.choices)
-    notice_category = models.CharField(
-        max_length=10, choices=NoticeCategory.choices, null=True, blank=True
+    writer = models.ForeignKey(
+        Employee,
+        db_column="writer_emp_no",
+        on_delete=models.RESTRICT,
+        related_name="board_posts",
+    )
+    post_type = models.CharField(max_length=10, choices=PostType.choices, default=PostType.GENERAL)
+    notice_category = models.ForeignKey(
+        NoticeCategoryModel,
+        db_column="notice_category_code",
+        on_delete=models.RESTRICT,
+        related_name="posts",
+        null=True,
+        blank=True,
     )
     title = models.CharField(max_length=100)
     content = models.TextField()
     created_at = models.DateTimeField()
-    updated_at = models.DateTimeField()
+    updated_at = models.DateTimeField(null=True, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "board_posts"
         ordering = ["-post_id"]
-        indexes = [
-            models.Index(fields=["post_type", "deleted_at"], name="board_post_type_del_idx"),
-            models.Index(fields=["notice_category"], name="board_post_category_idx"),
-        ]
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    Q(post_type="일반", notice_category__isnull=True)
-                    | Q(post_type="공지", notice_category__isnull=False)
-                ),
-                name="board_post_notice_category_matches_type",
-            ),
-        ]
+
+
+class CommentModel(models.Model):
+    comment_id = models.BigAutoField(primary_key=True)
+    post = models.ForeignKey(
+        PostModel,
+        db_column="post_id",
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    writer = models.ForeignKey(
+        Employee,
+        db_column="writer_emp_no",
+        on_delete=models.RESTRICT,
+        related_name="board_comments",
+    )
+    parent = models.ForeignKey(
+        "self",
+        db_column="parent_comment_id",
+        on_delete=models.CASCADE,
+        related_name="replies",
+        null=True,
+        blank=True,
+    )
+    content = models.TextField()
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "board_comments"
+        ordering = ["created_at", "comment_id"]

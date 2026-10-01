@@ -15,3 +15,12 @@ class PostCreateSerializer(serializers.Serializer):
 class PostUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=100)
     content = serializers.CharField()
+
+
+class CommentCreateSerializer(serializers.Serializer):
+    content = serializers.CharField()
+    parent_comment_id = serializers.IntegerField(required=False, allow_null=True)
+
+
+class CommentUpdateSerializer(serializers.Serializer):
+    content = serializers.CharField()
