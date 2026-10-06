@@ -42,6 +42,9 @@ erp-project/
 Python과 Frontend 의존성은 각각의 디렉터리와 lockfile로 관리합니다. `.venv`, `node_modules`,
 빌드 결과물, 실제 환경 파일과 자격증명은 Git에 포함하지 않습니다.
 
+기능 모듈을 별도 브랜치에서 개발할 때의 `dev` 동기화, 문서 초안 작성과 병합 절차는
+[기능 모듈 브랜치·문서 협업 가이드](docs/guides/module-branch-docs-workflow.md)를 따릅니다.
+
 ## 1. 필수 도구
 
 개발 PC에 다음 도구가 필요합니다.
@@ -53,6 +56,38 @@ Python과 Frontend 의존성은 각각의 디렉터리와 lockfile로 관리합�
 - nginx
 
 Podman, Docker 또는 로컬 PostgreSQL·Redis는 필요하지 않습니다.
+
+### nginx 설치
+
+macOS는 Homebrew로 설치할 수 있습니다.
+
+```bash
+brew install nginx
+```
+
+Ubuntu/Debian 계열은 배포판 패키지를 사용할 수 있습니다. 개발 스크립트가 nginx 프로세스를
+직접 실행하므로 OS 서비스로 시작할 필요는 없습니다.
+
+```bash
+sudo apt update
+sudo apt install nginx
+```
+
+Windows는 WinGet으로 설치한 뒤 새 PowerShell을 엽니다.
+
+```powershell
+winget install nginxinc.nginx
+```
+
+설치 후 다음 명령으로 `PATH` 인식을 확인합니다. Windows에서의 nginx 동작과 제약은
+[nginx/Windows 안내](https://nginx.org/en/docs/windows.html)를 참고합니다.
+
+```powershell
+nginx -v
+```
+
+nginx를 Windows 서비스로 등록할 필요는 없습니다. 통합 개발 스크립트가 실행마다 전용 설정과
+로그·임시 디렉터리를 만들고 종료할 때 정리합니다.
 
 ## 2. 저장소 Clone
 
@@ -128,9 +163,7 @@ REDIS_URL=redis://:<REDIS_PASSWORD>@127.0.0.1:6379/0
 # REDIS_URL=redis://<REDIS_USER>:<REDIS_PASSWORD>@127.0.0.1:6379/0
 ```
 
-실제 계정과 비밀번호는 인프라 관리자에게 받아 로컬 파일에만 입력합니다. Redis 관리 도구의 key
-separator는 `:`, ERP key filter는 `erp:*`를 사용합니다. 실제 키에는 wildcard를 넣지 않고
-`erp:dev:<module>:<identifier>`처럼 환경과 모듈을 구분합니다.
+실제 계정과 비밀번호는 인프라 관리자에게 받아 로컬 파일에만 입력합니다.
 
 ### 실제 데이터 연동과 세션 인증
 
@@ -175,7 +208,8 @@ cd ..
 
 ## 5. 개발환경 실행
 
-SSH 터널, Backend, Frontend를 각각 별도 터미널에서 실행합니다.
+SSH 터널을 먼저 연 뒤 통합 개발 스크립트로 Backend, Frontend와 nginx를 함께 실행하는 방식을
+기본으로 사용합니다.
 
 ### 5.1 SSH 터널
 
@@ -205,32 +239,7 @@ Windows PowerShell:
 .\scripts\ssh-tunnel.ps1 -EnvFile <TUNNEL_ENV_FILE>
 ```
 
-### 5.2 Backend
-
-```bash
-cd backend
-uv run python manage.py runserver
-```
-
-개발 명령은 기본적으로 `config.settings.development`와 `backend/.env.development`를 사용합니다.
-Django가 시작 단계에서 migration 상태를 조회하므로 PostgreSQL 터널과 올바른 DB 인증정보가
-필요합니다.
-
-### 5.3 Frontend
-
-```bash
-cd frontend
-bun run dev
-```
-
-Vite는 `/api` 요청을 `http://127.0.0.1:8000`으로 프록시합니다.
-
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:8000`
-- Health check: `http://localhost:8000/api/health/`
-- Django admin: `http://localhost:8000/admin/`
-
-### 5.4 nginx 통합 개발환경
+### 5.2 통합 개발환경 실행
 
 SSH 터널을 별도 터미널에서 먼저 실행한 뒤, Backend·Frontend·nginx를 한 번에 시작할 수 있다.
 
@@ -281,8 +290,36 @@ $env:ERP_DEV_FRONTEND_PORT = "5174"
 
 이 변수들은 실행 프로세스에만 적용하며 `.env`에 저장할 필요가 없다. Backend는 기존
 `backend/.env.development`, Frontend는 기존 `frontend/.env.development`를 그대로 사용한다.
-직접 Vite `5173` 또는 Django `8000`에 접속하는 방식도 계속 지원하지만, 세션·CSRF와 실제
-same-origin 흐름을 확인할 때는 nginx `8080` 주소를 사용한다.
+
+### 5.3 Backend·Frontend 개별 실행
+
+한쪽 애플리케이션만 개발하거나 통합 스크립트 문제를 진단할 때는 프로세스를 개별 실행할 수
+있습니다. 일반 개발과 세션·CSRF 검증에는 앞의 nginx 통합 실행을 우선 사용합니다.
+
+Backend:
+
+```bash
+cd backend
+uv run python manage.py runserver
+```
+
+개발 명령은 기본적으로 `config.settings.development`와 `backend/.env.development`를 사용합니다.
+Django가 시작 단계에서 migration 상태를 조회하므로 PostgreSQL 터널과 올바른 DB 인증정보가
+필요합니다.
+
+Frontend:
+
+```bash
+cd frontend
+bun run dev
+```
+
+Vite는 `/api` 요청을 `http://127.0.0.1:8000`으로 프록시합니다.
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
+- Health check: `http://localhost:8000/api/health/`
+- Django admin: `http://localhost:8000/admin/`
 
 ## 6. 연결 상태와 오프라인 개발
 
@@ -397,19 +434,6 @@ bun run build
 
 ASGI와 WSGI 진입점은 운영 settings를 기본으로 사용합니다. 배포 이미지, 도메인, TLS, reverse
 proxy와 Cloudflare Tunnel 구성은 인프라 정책이 확정된 뒤 별도로 관리합니다.
-
-## Notion MCP 연결
-
-프로젝트의 `.codex/config.toml`에 공식 Notion MCP 서버가 등록되어 있습니다. 설정 파일에는
-토큰이나 워크스페이스 정보가 없으며, 각 사용자가 자신의 Notion 권한으로 OAuth 인증해야 합니다.
-
-```bash
-codex mcp login notion
-```
-
-인증을 마친 뒤 Codex 앱 또는 IDE 확장을 재시작하고 MCP 서버 목록에서 `notion` 연결을
-확인합니다. 읽기 도구는 자동 실행할 수 있지만 Notion 내용을 생성하거나 변경하는 도구는 사용자
-승인을 요구하도록 설정되어 있습니다. 프로젝트별 MCP 설정은 신뢰한 저장소에서만 활성화합니다.
 
 ## 보안 원칙
 
