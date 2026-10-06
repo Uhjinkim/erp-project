@@ -93,14 +93,15 @@
 
 ## 검증
 
-- 실행한 테스트(2026-10-06): `uv run pytest`(51건 통과), `uv run ruff check .`,
-  `uv run python manage.py check`, `uv run python manage.py makemigrations --check --dry-run`,
-  `bun run lint`, `bun run build`
+- 실행한 테스트(2026-10-06, `origin/dev` 병합 후): `uv run pytest`(88건 통과 — 급여 51건,
+  게시판 37건), `uv run ruff check .`, `uv run python manage.py check`,
+  `uv run python manage.py makemigrations --check --dry-run`, `bun run lint`, `bun run build`,
+  `.\scripts\start-dev.ps1 -Check`, `.\scripts\docs-workflow.ps1 check`(통과)
+- `origin/dev` 병합 시 `INSTALLED_APPS`, URL, 테스트 `MIGRATION_MODULES`, 프론트엔드 모듈
+  전환에서 급여·게시판 등록이 겹쳐 충돌했고, 양쪽을 모두 유지하는 방식으로 해결했다.
 - 남은 검증:
-  - 화면에서 상여·소득세 입력과 급여명세서 표시 확인
-  - 로컬 개발 서버(`start-dev.ps1`, `--noreload`) 재시작 후 브라우저 수동 확인
-  - commit 후 `origin/dev` 병합과 `docs-workflow.ps1 check`(현재 브랜치 HEAD에는 이번에
-    되돌린 공용 문서 변경이 아직 commit되어 있다)
+  - 로컬 개발 서버(`start-dev.ps1`, `--noreload`) 재시작 후 브라우저에서 상여·소득세 입력,
+    급여명세서 표시, 상태 필터, 이력 표시 수동 확인
 
 ## 공용 문서 반영 후보
 
