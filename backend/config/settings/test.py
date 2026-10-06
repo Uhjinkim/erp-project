@@ -28,4 +28,5 @@ MIGRATION_MODULES = {
     "vacation": None,
     "workforce": None,
     "board": None,
+    "evaluation": None,
 }
