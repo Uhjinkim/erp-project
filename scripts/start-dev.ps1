@@ -103,6 +103,9 @@ if (-not (Test-Path -LiteralPath $backendEnvFile -PathType Leaf)) {
 
 $runtimeDir = Join-Path ([System.IO.Path]::GetTempPath()) ("erp-nginx-dev-" + [guid]::NewGuid().ToString("N"))
 $null = New-Item -ItemType Directory -Path $runtimeDir
+foreach ($tempDir in @("temp/client_body_temp", "temp/proxy_temp", "temp/fastcgi_temp", "temp/scgi_temp", "temp/uwsgi_temp")) {
+    $null = New-Item -ItemType Directory -Path (Join-Path $runtimeDir $tempDir) -Force
+}
 $nginxConfig = Join-Path $runtimeDir "nginx.conf"
 $startupErrorLog = Join-Path $runtimeDir "startup-error.log"
 $backendProcess = $null

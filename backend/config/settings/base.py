@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "workforce.apps.WorkforceConfig",
     "vacation.apps.VacationConfig",
     "payroll.apps.PayrollConfig",
+    "board.apps.BoardConfig",
 ]
 
 MIDDLEWARE = [
