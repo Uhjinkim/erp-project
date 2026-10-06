@@ -16,14 +16,8 @@ Markdown 스냅샷이다. Notion이 원문(source of truth)이며, 코드 변경
 - [07. 테이블 설계 결정안](./07-table-design-decisions.md)
 - [08. 테이블 명세](./08-table-specification.md)
 
-- [workforce 구현 대응표](./workforce-implementation-map.md)
-- [payroll 구현 대응표](./payroll-implementation-map.md)
-
 ## 구현 대응 문서
 
 - [Workforce 명세 구현 대응표](./workforce-implementation-map.md)
 
-
-마지막 원문 확인일: 2026-09-22 (급여 관련 문서는 담당자가 전달한 Notion 원문 파일
-기준; Notion MCP 인증 후 직접 재조회로 교차 검증이 필요하다)
 마지막 원문 확인일: 2026-09-25

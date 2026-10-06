@@ -4,7 +4,7 @@
 - Notion 기능 명세 원문: <https://app.notion.com/p/3d78eced448d8118bd7ce952069417ed>
 - Notion 핵심 기능 상세 원문: <https://app.notion.com/p/3d78eced448d81018ff7c3cf39e01776>
 - Notion 미확정 정책 원문: <https://app.notion.com/p/3d78eced448d81c0be0ff8f95b5ee9c3>
-- 점검일: 2026-09-23
+- 점검일: 2026-10-06
 
 ## 명세 확보 방법에 대한 참고
 
@@ -93,7 +93,22 @@ Notion MCP 커넥터는 이 환경에서 인증이 불가능하며 앞으로도 
   함께 기록한다. `change_summary`라는 별도 컬럼은 실제 테이블에 없으므로, 구성항목
   변경 요약은 `reason` 컬럼(varchar(255), 초과 시 잘라서 저장)에 담는다.
 - `PY-008`: `PayrollService.get()`/`history()`는 본인이거나 급여담당자가 아니면
-  `PayrollPermissionError`를 발생시킨다.
+  `PayrollPermissionError`를 발생시킨다. (2026-10-06 추가) 본인이 조회하는 경우에도
+  `확정` 상태가 아니면(아직 작성중인 초안) 조회할 수 없다 — 담당자가 확정하기 전까지는
+  본인 급여 페이지에 노출하지 않는다(`list_mine()`은 확정 건만 반환, `get()`/`history()`도
+  동일 조건). 급여담당자는 관리 화면에서는 작성중 상태도 그대로 볼 수 있다(편집·확정을
+  위해 필요하므로 이 제한은 "본인 조회" 경로에만 적용된다).
+- (2026-10-06 추가) **급여담당자 본인 급여 자기거래 방지**: 급여담당자가 한 명이 아닐 수
+  있으므로, 본인이 본인 급여를 생성·구성항목 수정·확정·확정취소하는 것은 금지한다
+  (`PayrollService._require_not_self()`). 다른 급여담당자가 처리해야 한다. 조회(관리
+  화면에서 본인을 대상으로 필터링해 보는 것)는 막지 않는다 — 입력·수정·확정 권한만
+  제한한다.
+- (2026-10-06 추가) 급여 변경 이력은 최신순(내림차순)으로 반환한다
+  (`DjangoPayrollHistoryRepository.list_for_statement()`가 `-changed_at, -history_id`
+  순으로 정렬). 기존에는 오래된 순이었다.
+- (2026-10-06) 특수 상황 추가 구성항목: 담당자 확인 결과, 필요할 때마다 최소한으로
+  추가하는 현재 방식(고정 목록 + 필요 시 migration으로 추가)을 유지하기로 했다. 미리
+  예상되는 항목을 선제적으로 추가하지는 않는다.
 - `PY-009` / `FN-PY-001` 반올림: **`net_pay`에는 더 이상 별도 올림 처리를 적용하지
   않는다.** 실제 `payrolls` 테이블이 `net_pay = total_pay - total_deduct`를 정확히
   일치하도록 CHECK 제약으로 강제하기 때문이다. 원 단위 미만 금액 올림이 필요한 해외
@@ -132,6 +147,20 @@ Notion MCP 커넥터는 이 환경에서 인증이 불가능하며 앞으로도 
   테이블 생성과 `payroll_items` 6건 시드, `roles`에 `PAYROLL_MANAGER` 시드를 적용했다.
   기존 `payrolls`/`payroll_details`/`payroll_history`는 이번 적용 전후 모두 0건이며,
   실제 DDL 변경 없이 Django 모델 상태만 등록됐다.
+- (2026-10-06 2차) 이력 조회는 역할에 따라 응답 필드가 다르다:
+  `PayrollService.can_view_history_details()`가 급여담당자 여부를 판정하고, 급여담당자는
+  처리자 이름(`actor_name`)·사유까지, 일반 사원은 `action`·`changed_at`만 받는다.
+  처리자 이름과 급여 응답의 `employee` 정보는 `WorkforceGateway.employee_displays()`
+  포트로 조회한다(이전에는 presentation에서 workforce ORM을 직접 조회했다 — AGENTS.md의
+  "다른 컨텍스트 접근은 포트·게이트웨이 경유" 규칙에 맞게 수정).
+- (2026-10-06 2차) 구성항목 수정 이력 사유는 `기본급 2,300,000원, 국민연금 103,500원`
+  형식(한글 항목명, 정수·천 단위 쉼표), 확정 사유는 `차인지급액 N원 확정`.
+- (2026-10-06 2차) 구성항목에 소득세(지방소득세 포함)(`INCOME_TAX`, 공제)를 추가했다
+  (`payroll/migrations/0005_seed_income_tax_component.py`). 상여(0004)와 함께 2026-10-06
+  사용자 승인 후 공유 개발 DB에 적용했다.
+- (2026-10-06 2차) 이 문서는 원래 `docs/specs/notion/payroll-implementation-map.md`였고,
+  공용 문서 직접 수정 금지 규칙에 따라 브랜치 기여 폴더로 옮겼다. 본문의 "2026-09-23"
+  이전 항목에 남아 있는 공용 문서 경로 언급은 당시 기록이다.
 
 ## 후속 구현
 
