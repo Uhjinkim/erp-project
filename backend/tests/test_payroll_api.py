@@ -61,6 +61,11 @@ def test_only_payroll_manager_can_create_a_statement() -> None:
     assert created.json()["status"] == "작성중"
     assert created.json()["payment_date"] == "2026-09-25"
 
+    denied_self = client.post(
+        "/api/payroll/statements/", {"emp_no": 9001, "year": 2026, "month": 9}, format="json"
+    )
+    assert denied_self.status_code == 403
+
 
 @pytest.mark.django_db
 def test_full_create_edit_confirm_cancel_reconfirm_flow_via_api() -> None:
@@ -128,12 +133,19 @@ def test_full_create_edit_confirm_cancel_reconfirm_flow_via_api() -> None:
 
     history = client.get(f"/api/payroll/statements/{statement_id}/history/")
     assert [entry["action"] for entry in history.json()] == [
-        "수정",
-        "확정",
-        "확정취소",
-        "수정",
         "재확정",
+        "수정",
+        "확정취소",
+        "확정",
+        "수정",
     ]
+    assert set(history.json()[0]) == {"history_id", "statement_id", "action", "changed_at"}
+
+    client.force_authenticate(manager_user)
+    manager_history = client.get(f"/api/payroll/statements/{statement_id}/history/").json()
+    assert manager_history[0]["actor_name"] == "사원 9001"
+    assert manager_history[1]["reason"] == "기본급 3,200,000원"
+    assert manager_history[2]["reason"] == "기본급 정정"
 
 
 @pytest.mark.django_db
@@ -173,6 +185,45 @@ def test_create_statement_accepts_items_up_front_and_returns_employee_summary() 
 
     history = client.get(f"/api/payroll/statements/{created.json()['statement_id']}/history/")
     assert history.json() == []
+
+
+@pytest.mark.django_db
+def test_employee_cannot_see_their_own_draft_until_confirmed() -> None:
+
+    employee = create_employee(1001, "employee@example.com")
+    manager = create_employee(9001, "manager@example.com")
+    employee_user = create_user(employee, "employee@example.com")
+    manager_user = create_user(manager, "manager@example.com")
+    role = Role.objects.create(role_code="PAYROLL_MANAGER", role_name="급여 담당자")
+    manager.role_assignments.create(role=role, assigned_at=timezone.now())
+    seed_components()
+
+    client = APIClient()
+    client.force_authenticate(manager_user)
+    created = client.post(
+        "/api/payroll/statements/",
+        {
+            "emp_no": 1001,
+            "year": 2026,
+            "month": 9,
+            "items": [{"component_code": "BASE_PAY", "amount": "3000000"}],
+        },
+        format="json",
+    )
+    statement_id = created.json()["statement_id"]
+
+    client.force_authenticate(employee_user)
+    assert client.get("/api/payroll/statements/").json() == []
+    assert client.get(f"/api/payroll/statements/{statement_id}/").status_code == 403
+
+    client.force_authenticate(manager_user)
+    confirmed = client.post(f"/api/payroll/statements/{statement_id}/confirm/", format="json")
+    assert confirmed.status_code == 200
+
+    client.force_authenticate(employee_user)
+    mine = client.get("/api/payroll/statements/")
+    assert [item["statement_id"] for item in mine.json()] == [statement_id]
+    assert client.get(f"/api/payroll/statements/{statement_id}/").status_code == 200
 
 
 @pytest.mark.django_db

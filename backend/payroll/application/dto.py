@@ -70,13 +70,23 @@ def item_to_dict(item: PayrollItem) -> dict[str, object]:
     }
 
 
-def history_to_dict(history: PayrollHistory) -> dict[str, object]:
+def history_to_dict(history: PayrollHistory, actor_name: str | None) -> dict[str, object]:
     return {
         "history_id": history.history_id,
         "statement_id": history.statement_id,
         "action": history.action.value,
         "actor_employee_no": history.actor_employee_no,
+        "actor_name": actor_name,
         "reason": history.reason,
+        "changed_at": history.changed_at,
+    }
+
+
+def history_to_summary_dict(history: PayrollHistory) -> dict[str, object]:
+    return {
+        "history_id": history.history_id,
+        "statement_id": history.statement_id,
+        "action": history.action.value,
         "changed_at": history.changed_at,
     }
 

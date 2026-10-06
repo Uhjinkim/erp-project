@@ -37,11 +37,13 @@ export type PayrollStatement = {
   confirmed_at: string | null
 }
 
+// Payroll managers receive actor and reason; other employees receive only action and date.
 export type PayrollHistoryEntry = {
   history_id: number
   statement_id: number
   action: string
-  actor_employee_no: number
-  reason: string | null
   changed_at: string
+  actor_employee_no?: number
+  actor_name?: string | null
+  reason?: string | null
 }

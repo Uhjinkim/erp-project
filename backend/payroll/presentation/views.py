@@ -15,6 +15,7 @@ from payroll.application.dto import (
     UpdateItemsCommand,
     component_to_dict,
     history_to_dict,
+    history_to_summary_dict,
     statement_to_dict,
 )
 from payroll.application.service import PayrollService
@@ -32,38 +33,7 @@ from payroll.presentation.serializers import (
     ReasonSerializer,
     UpdateItemsSerializer,
 )
-from workforce.infrastructure.models import Employee
 from workforce.presentation.permissions import request_employee_no
-
-
-def _employee_summaries(employee_nos: set[int]) -> dict[int, dict[str, object]]:
-    employees = Employee.objects.select_related("person", "position").filter(
-        employee_no__in=employee_nos
-    )
-    return {
-        employee.employee_no: {
-            "emp_no": employee.employee_no,
-            "name": employee.person.name,
-            "position_name": employee.position.position_name if employee.position else None,
-        }
-        for employee in employees
-    }
-
-
-def _serialize_statements(statements: list) -> list[dict[str, object]]:
-    summaries = _employee_summaries({statement.employee_no for statement in statements})
-    unknown = {"emp_no": None, "name": None, "position_name": None}
-    result = []
-    for statement in statements:
-        employee = summaries.get(
-            statement.employee_no, {**unknown, "emp_no": statement.employee_no}
-        )
-        result.append({**statement_to_dict(statement), "employee": employee})
-    return result
-
-
-def _serialize_statement(statement) -> dict[str, object]:
-    return _serialize_statements([statement])[0]
 
 
 class PayrollAPIView(APIView):
@@ -83,6 +53,28 @@ class PayrollAPIView(APIView):
         if employee_no is None:
             raise PayrollPermissionError("요청 사용자와 연결된 사원번호가 없습니다.")
         return employee_no
+
+    def serialize_statements(self, statements: list) -> list[dict[str, object]]:
+        displays = self.service.employee_displays(
+            {statement.employee_no for statement in statements}
+        )
+        result = []
+        for statement in statements:
+            display = displays.get(statement.employee_no)
+            result.append(
+                {
+                    **statement_to_dict(statement),
+                    "employee": {
+                        "emp_no": statement.employee_no,
+                        "name": display.name if display else None,
+                        "position_name": display.position_name if display else None,
+                    },
+                }
+            )
+        return result
+
+    def serialize_statement(self, statement) -> dict[str, object]:
+        return self.serialize_statements([statement])[0]
 
     def error_response(self, error: PayrollError) -> Response:
         response_status = status.HTTP_400_BAD_REQUEST
@@ -117,7 +109,7 @@ class StatementListCreateView(PayrollAPIView):
                 items = self.service.list_for_employee(None, employee_no)
             else:
                 items = self.service.list_mine(employee_no)
-            return Response(_serialize_statements(items))
+            return Response(self.serialize_statements(items))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -139,7 +131,7 @@ class StatementListCreateView(PayrollAPIView):
                     items=input_items,
                 )
             )
-            return Response(_serialize_statement(item), status=status.HTTP_201_CREATED)
+            return Response(self.serialize_statement(item), status=status.HTTP_201_CREATED)
         except PayrollError as error:
             return self.error_response(error)
 
@@ -148,7 +140,7 @@ class StatementDetailView(PayrollAPIView):
     def get(self, request: Request, statement_id: int) -> Response:
         try:
             item = self.service.get(statement_id, self.employee_no(request))
-            return Response(_serialize_statement(item))
+            return Response(self.serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -171,7 +163,7 @@ class ItemsUpdateView(PayrollAPIView):
                     items=items,
                 )
             )
-            return Response(_serialize_statement(item))
+            return Response(self.serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -186,7 +178,7 @@ class ConfirmView(PayrollAPIView):
                     actor_employee_no=self.employee_no(request), statement_id=statement_id
                 )
             )
-            return Response(_serialize_statement(item))
+            return Response(self.serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -205,7 +197,7 @@ class CancelConfirmationView(PayrollAPIView):
                     reason=serializer.validated_data["reason"],
                 )
             )
-            return Response(_serialize_statement(item))
+            return Response(self.serialize_statement(item))
         except PayrollError as error:
             return self.error_response(error)
 
@@ -213,8 +205,22 @@ class CancelConfirmationView(PayrollAPIView):
 class HistoryView(PayrollAPIView):
     def get(self, request: Request, statement_id: int) -> Response:
         try:
-            entries = self.service.history(statement_id, self.employee_no(request))
-            return Response([history_to_dict(item) for item in entries])
+            employee_no = self.employee_no(request)
+            entries = self.service.history(statement_id, employee_no)
+            if not self.service.can_view_history_details(employee_no):
+                return Response([history_to_summary_dict(item) for item in entries])
+            displays = self.service.employee_displays({item.actor_employee_no for item in entries})
+            return Response(
+                [
+                    history_to_dict(
+                        item,
+                        displays[item.actor_employee_no].name
+                        if item.actor_employee_no in displays
+                        else None,
+                    )
+                    for item in entries
+                ]
+            )
         except PayrollError as error:
             return self.error_response(error)
 

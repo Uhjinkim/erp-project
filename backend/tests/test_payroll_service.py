@@ -10,7 +10,7 @@ from payroll.application.dto import (
     PayrollItemInput,
     UpdateItemsCommand,
 )
-from payroll.application.ports import HolidayGateway, WorkforceGateway
+from payroll.application.ports import EmployeeDisplay, HolidayGateway, WorkforceGateway
 from payroll.application.service import PayrollService
 from payroll.domain.entities import (
     ComponentCategory,
@@ -120,6 +120,12 @@ class FakeWorkforce(WorkforceGateway):
     def is_payroll_manager(self, employee_no: int) -> bool:
         return employee_no in self.managers
 
+    def employee_displays(self, employee_nos: set[int]) -> dict[int, EmployeeDisplay]:
+        return {
+            employee_no: EmployeeDisplay(employee_no, f"사원 {employee_no}", None)
+            for employee_no in employee_nos
+        }
+
 
 class FakeHolidays(HolidayGateway):
     def holidays_in(self, year: int, month: int) -> frozenset[date]:
@@ -140,6 +146,33 @@ def test_only_payroll_manager_can_create_a_statement() -> None:
         service(FakeUnitOfWork()).create_statement(
             CreateStatementCommand(actor_employee_no=1001, employee_no=1001, year=2026, month=9)
         )
+
+
+def test_payroll_manager_cannot_create_their_own_statement() -> None:
+    with pytest.raises(PayrollPermissionError):
+        service(FakeUnitOfWork()).create_statement(
+            CreateStatementCommand(actor_employee_no=9001, employee_no=9001, year=2026, month=9)
+        )
+
+
+def test_payroll_manager_cannot_confirm_their_own_statement() -> None:
+    uow = FakeUnitOfWork()
+    payroll = service(uow, managers={9001, 9002})
+    created = payroll.create_statement(
+        CreateStatementCommand(
+            actor_employee_no=9002,
+            employee_no=9001,
+            year=2026,
+            month=9,
+            items=[PayrollItemInput(component_code="BASE_PAY", amount=Decimal("3000000"))],
+        )
+    )
+    statement_id = created.statement_id or 0
+
+    with pytest.raises(PayrollPermissionError):
+        payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
+
+    payroll.confirm(ConfirmCommand(actor_employee_no=9002, statement_id=statement_id))
 
 
 def test_create_statement_rejects_duplicate_employee_and_period() -> None:
@@ -196,7 +229,37 @@ def test_confirm_cancel_and_reconfirm_are_all_recorded_as_history() -> None:
     assert actions == ["수정", "확정", "확정취소", "재확정"]
 
 
-def test_employee_can_view_only_their_own_statement() -> None:
+def test_history_reasons_use_korean_component_names_and_whole_won_amounts() -> None:
+    uow = FakeUnitOfWork()
+    payroll = service(uow)
+    created = payroll.create_statement(
+        CreateStatementCommand(actor_employee_no=9001, employee_no=1001, year=2026, month=9)
+    )
+    statement_id = created.statement_id or 0
+    payroll.update_items(
+        UpdateItemsCommand(
+            actor_employee_no=9001,
+            statement_id=statement_id,
+            items=[
+                PayrollItemInput(component_code="BASE_PAY", amount=Decimal("2300000.00")),
+                PayrollItemInput(component_code="NATIONAL_PENSION", amount=Decimal("103500.00")),
+            ],
+        )
+    )
+    payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
+
+    reasons = [entry.reason for entry in uow.histories.list_for_statement(statement_id)]
+    assert reasons == ["기본급 2,300,000원, 국민연금 103,500원", "차인지급액 2,196,500원 확정"]
+
+
+def test_only_payroll_manager_can_view_history_details() -> None:
+    payroll = service(FakeUnitOfWork())
+
+    assert payroll.can_view_history_details(9001) is True
+    assert payroll.can_view_history_details(1001) is False
+
+
+def test_employee_cannot_view_their_own_draft_but_manager_can() -> None:
     uow = FakeUnitOfWork()
     payroll = service(uow)
     created = payroll.create_statement(
@@ -204,7 +267,29 @@ def test_employee_can_view_only_their_own_statement() -> None:
     )
     statement_id = created.statement_id or 0
 
+    with pytest.raises(PayrollPermissionError):
+        payroll.get(statement_id, 1001)
+    assert payroll.get(statement_id, 9001).employee_no == 1001
+    assert payroll.list_mine(1001) == []
+
+
+def test_employee_can_view_only_their_own_confirmed_statement() -> None:
+    uow = FakeUnitOfWork()
+    payroll = service(uow)
+    created = payroll.create_statement(
+        CreateStatementCommand(
+            actor_employee_no=9001,
+            employee_no=1001,
+            year=2026,
+            month=9,
+            items=[PayrollItemInput(component_code="BASE_PAY", amount=Decimal("3000000"))],
+        )
+    )
+    statement_id = created.statement_id or 0
+    payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
+
     assert payroll.get(statement_id, 1001).employee_no == 1001
     with pytest.raises(PayrollPermissionError):
         payroll.get(statement_id, 1002)
     assert payroll.get(statement_id, 9001).employee_no == 1001
+    assert [item.statement_id for item in payroll.list_mine(1001)] == [statement_id]

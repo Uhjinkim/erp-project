@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
   cancelPayrollConfirmation,
@@ -22,24 +22,54 @@ type PayrollPanelProps = {
 }
 
 type AmountValues = Record<string, string>
+type Notice = { text: string; tone: "info" | "error" }
+type StatusFilter = "all" | "작성중" | "확정" | "미작성"
 
-const currentYear = new Date().getFullYear()
-const currentMonth = new Date().getMonth() + 1
+const NO_DEPARTMENT = "__none__"
+// Payslip display order (reference payslip: 기본급·상여·수당 / 국민연금·건강보험·고용보험·소득세).
+const DISPLAY_ORDER = [
+  "BASE_PAY",
+  "BONUS",
+  "FIXED_ALLOWANCE",
+  "OVERTIME_ALLOWANCE",
+  "NATIONAL_PENSION",
+  "HEALTH_INSURANCE",
+  "EMPLOYMENT_INSURANCE",
+  "INCOME_TAX",
+]
+
+const today = new Date()
+const currentYear = today.getFullYear()
+const currentMonth = today.getMonth() + 1
+const currentPeriod = `${currentYear}-${String(currentMonth).padStart(2, "0")}`
+
+function displayRank(code: string): number {
+  const index = DISPLAY_ORDER.indexOf(code)
+  return index === -1 ? DISPLAY_ORDER.length : index
+}
+
+function sortComponents(components: PayrollComponent[]): PayrollComponent[] {
+  return [...components].sort((left, right) => displayRank(left.code) - displayRank(right.code))
+}
+
+function periodKey(statement: PayrollStatement): string {
+  return `${statement.year}-${String(statement.month).padStart(2, "0")}`
+}
 
 function amountValuesFromItems(items: PayrollItem[]): AmountValues {
   const values: AmountValues = {}
-  for (const item of items) values[item.component_code] = String(item.amount)
+  for (const item of items) values[item.component_code] = String(Math.trunc(item.amount))
   return values
 }
 
 function itemsFromAmountValues(values: AmountValues): Pick<PayrollItem, "component_code" | "amount">[] {
   return Object.entries(values)
     .filter(([, amount]) => amount.trim() !== "")
-    .map(([component_code, amount]) => ({ component_code, amount: Number(amount) }))
+    .map(([component_code, amount]) => ({ component_code, amount: Math.trunc(Number(amount)) }))
 }
 
 function won(value: number): string {
-  return value.toLocaleString("ko-KR")
+  return `${Math.trunc(value).toLocaleString("ko-KR")}원`
 }
 
 type ComponentAmountFieldsProps = {
@@ -49,88 +79,94 @@ type ComponentAmountFieldsProps = {
 }
 
 function ComponentAmountFields({ components, values, onChange }: ComponentAmountFieldsProps) {
-  const earnings = components.filter((item) => item.category === "지급")
-  const deductions = components.filter((item) => item.category === "공제")
+  const sorted = sortComponents(components)
+  const groups: [string, PayrollComponent[]][] = [
+    ["지급 항목", sorted.filter((item) => item.category === "지급")],
+    ["공제 항목", sorted.filter((item) => item.category === "공제")],
+  ]
   return (
     <div className="payroll-component-fields">
-      <fieldset>
-        <legend>지급 항목</legend>
-        {earnings.map((component) => (
-          <label key={component.code}>
-            {component.name}
-            <input
-              type="number"
-              min="0"
-              placeholder="미입력 시 저장하지 않음"
-              value={values[component.code] ?? ""}
-              onChange={(event) => onChange(component.code, event.target.value)}
-            />
-          </label>
-        ))}
-      </fieldset>
-      <fieldset>
-        <legend>공제 항목</legend>
-        {deductions.map((component) => (
-          <label key={component.code}>
-            {component.name}
-            <input
-              type="number"
-              min="0"
-              placeholder="미입력 시 저장하지 않음"
-              value={values[component.code] ?? ""}
-              onChange={(event) => onChange(component.code, event.target.value)}
-            />
-          </label>
-        ))}
-      </fieldset>
+      {groups.map(([legend, items]) => (
+        <fieldset key={legend}>
+          <legend>{legend}</legend>
+          {items.map((component) => (
+            <label key={component.code}>
+              {component.name}
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="미입력 시 저장하지 않음"
+                value={values[component.code] ?? ""}
+                onChange={(event) => onChange(component.code, event.target.value)}
+              />
+            </label>
+          ))}
+        </fieldset>
+      ))}
     </div>
   )
 }
 
 type PayslipTableProps = {
   statement: PayrollStatement
-  componentName: (code: string) => string
+  components: PayrollComponent[]
 }
 
-function PayslipTable({ statement, componentName }: PayslipTableProps) {
-  const earnings = statement.items.filter((item) => item.category === "지급")
-  const deductions = statement.items.filter((item) => item.category === "공제")
+function PayslipTable({ statement, components }: PayslipTableProps) {
+  // Every active component is listed, like a printed payslip; items whose component was
+  // later deactivated are appended so no recorded amount is hidden.
+  const amountByCode = new Map(statement.items.map((item) => [item.component_code, item.amount]))
+  const knownCodes = new Set(components.map((component) => component.code))
+  const lines = [
+    ...sortComponents(components).map((component) => ({
+      code: component.code,
+      name: component.name,
+      category: component.category,
+      amount: amountByCode.get(component.code),
+    })),
+    ...statement.items
+      .filter((item) => !knownCodes.has(item.component_code))
+      .map((item) => ({ code: item.component_code, name: item.component_code, category: item.category, amount: item.amount })),
+  ]
+  const earnings = lines.filter((line) => line.category === "지급")
+  const deductions = lines.filter((line) => line.category === "공제")
   const rowCount = Math.max(earnings.length, deductions.length, 1)
-  const rows = Array.from({ length: rowCount }, (_, index) => ({
-    earning: earnings[index],
-    deduction: deductions[index],
-  }))
 
   return (
     <table className="payslip-table">
       <thead>
         <tr>
-          <th>지급내역 (A)</th>
-          <th>지급액</th>
-          <th>공제내역 (B)</th>
-          <th>공제액</th>
+          <th scope="col">지급내역 (A)</th>
+          <th scope="col">지급액</th>
+          <th scope="col">공제내역 (B)</th>
+          <th scope="col">공제액</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, index) => (
-          <tr key={index}>
-            <td>{row.earning ? componentName(row.earning.component_code) : ""}</td>
-            <td>{row.earning ? `${won(row.earning.amount)}원` : ""}</td>
-            <td>{row.deduction ? componentName(row.deduction.component_code) : ""}</td>
-            <td>{row.deduction ? `${won(row.deduction.amount)}원` : ""}</td>
-          </tr>
-        ))}
+        {Array.from({ length: rowCount }, (_, index) => {
+          const earning = earnings[index]
+          const deduction = deductions[index]
+          return (
+            <tr key={index}>
+              <td>{earning?.name ?? ""}</td>
+              <td>{earning?.amount !== undefined ? won(earning.amount) : ""}</td>
+              <td>{deduction?.name ?? ""}</td>
+              <td>{deduction?.amount !== undefined ? won(deduction.amount) : ""}</td>
+            </tr>
+          )
+        })}
       </tbody>
       <tfoot>
         <tr>
           <td>지급총액</td>
-          <td>{won(statement.total_earnings)}원</td>
+          <td>{won(statement.total_earnings)}</td>
           <td>공제액 계</td>
-          <td>{won(statement.total_deductions)}원</td>
+          <td>{won(statement.total_deductions)}</td>
         </tr>
         <tr className="payslip-net">
           <td colSpan={3}>차인지급액 (C)</td>
-          <td>{won(statement.net_pay)}원</td>
+          <td>{won(statement.net_pay)}</td>
         </tr>
       </tfoot>
     </table>
@@ -139,6 +175,8 @@ function PayslipTable({ statement, componentName }: PayslipTableProps) {
 
 export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   const isPayrollManager = currentUser.is_superuser || currentUser.roles.includes("PAYROLL_MANAGER")
+  const ownEmployeeNo = currentUser.employee?.emp_no ?? null
+  const createFormRef = useRef<HTMLFormElement>(null)
   const [tab, setTab] = useState<"mine" | "manage">("mine")
   const [components, setComponents] = useState<PayrollComponent[]>([])
   const [employees, setEmployees] = useState<EmployeeSummary[]>([])
@@ -147,6 +185,8 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   const [managed, setManaged] = useState<PayrollStatement[]>([])
   const [filterDeptNo, setFilterDeptNo] = useState("")
   const [filterEmpNo, setFilterEmpNo] = useState("")
+  const [filterPeriod, setFilterPeriod] = useState(currentPeriod)
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all")
   const [createDeptNo, setCreateDeptNo] = useState("")
   const [createEmpNo, setCreateEmpNo] = useState("")
   const [createYear, setCreateYear] = useState(String(currentYear))
@@ -155,10 +195,14 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   const [itemDrafts, setItemDrafts] = useState<Record<number, AmountValues>>({})
   const [histories, setHistories] = useState<Record<number, PayrollHistoryEntry[]>>({})
   const [openHistory, setOpenHistory] = useState<number | null>(null)
-  const [message, setMessage] = useState("")
+  const [notice, setNotice] = useState<Notice | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const visible = tab === "mine" ? mine : managed
+  const showInfo = useCallback((text: string) => setNotice({ text, tone: "info" }), [])
+  const showError = useCallback((error: unknown, fallback: string) => {
+    setNotice({ text: error instanceof Error ? error.message : fallback, tone: "error" })
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!enabled) return
@@ -176,13 +220,13 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
           : await loadAllPayrollStatements()
         setManaged(managedList)
       }
-      setMessage("")
+      setNotice(null)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "급여 정보를 불러오지 못했습니다.")
+      showError(error, "급여 정보를 불러오지 못했습니다.")
     } finally {
       setLoading(false)
     }
-  }, [enabled, filterEmpNo, isPayrollManager])
+  }, [enabled, filterEmpNo, isPayrollManager, showError])
 
   useEffect(() => {
     if (!enabled) return
@@ -190,15 +234,14 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
     return () => window.clearTimeout(timer)
   }, [enabled, refresh])
 
-  const componentName = useCallback(
-    (code: string) => components.find((item) => item.code === code)?.name ?? code,
-    [components],
-  )
-
   const employeesInDepartment = useCallback(
-    (deptNo: string) => employees.filter((employee) => String(employee.dept_no ?? "") === deptNo),
+    (deptNo: string) =>
+      employees.filter((employee) =>
+        deptNo === NO_DEPARTMENT ? employee.dept_no === null : String(employee.dept_no) === deptNo,
+      ),
     [employees],
   )
+  const hasUnassigned = employees.some((employee) => employee.dept_no === null)
 
   function updateCreateItem(code: string, value: string) {
     setCreateItemValues((previous) => ({ ...previous, [code]: value }))
@@ -207,7 +250,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   async function submitCreate(event: FormEvent) {
     event.preventDefault()
     if (!createEmpNo) {
-      setMessage("부서와 사람을 선택해주세요.")
+      showError(null, "부서와 사람을 선택해주세요.")
       return
     }
     setLoading(true)
@@ -221,16 +264,33 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
       setCreateItemValues({})
       setCreateEmpNo("")
       await refresh()
-      setMessage("급여를 생성했습니다.")
+      showInfo("급여를 생성했습니다.")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "급여를 생성하지 못했습니다.")
+      showError(error, "급여를 생성하지 못했습니다.")
     } finally {
       setLoading(false)
     }
   }
 
+  function prefillCreate(employee: EmployeeSummary) {
+    const [year, month] = filterPeriod.split("-")
+    setCreateDeptNo(employee.dept_no === null ? NO_DEPARTMENT : String(employee.dept_no))
+    setCreateEmpNo(String(employee.emp_no))
+    setCreateYear(String(Number(year)))
+    setCreateMonth(String(Number(month)))
+    createFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
   function beginEditItems(statement: PayrollStatement) {
     setItemDrafts((previous) => ({ ...previous, [statement.statement_id]: amountValuesFromItems(statement.items) }))
+  }
+
+  function closeEditor(statementId: number) {
+    setItemDrafts((previous) => {
+      const next = { ...previous }
+      delete next[statementId]
+      return next
+    })
   }
 
   function updateDraftItem(statementId: number, code: string, value: string) {
@@ -243,21 +303,19 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   async function saveItems(statementId: number) {
     const items = itemsFromAmountValues(itemDrafts[statementId] ?? {})
     if (items.length === 0) {
-      setMessage("구성항목을 최소 1건 이상 입력해야 합니다.")
+      showError(null, "구성항목을 최소 1건 이상 입력해야 합니다.")
       return
     }
     setLoading(true)
     try {
       await updatePayrollItems(statementId, items)
-      setItemDrafts((previous) => {
-        const next = { ...previous }
-        delete next[statementId]
-        return next
-      })
+      closeEditor(statementId)
+      setHistories((previous) => ({ ...previous, [statementId]: [] }))
+      setOpenHistory(null)
       await refresh()
-      setMessage("급여 구성항목을 저장했습니다.")
+      showInfo("급여 구성항목을 저장했습니다.")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "구성항목을 저장하지 못했습니다.")
+      showError(error, "구성항목을 저장하지 못했습니다.")
     } finally {
       setLoading(false)
     }
@@ -267,10 +325,11 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
     setLoading(true)
     try {
       await confirmPayrollStatement(statementId)
+      setOpenHistory(null)
       await refresh()
-      setMessage("급여를 확정했습니다.")
+      showInfo("급여를 확정했습니다.")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "확정하지 못했습니다.")
+      showError(error, "확정하지 못했습니다.")
     } finally {
       setLoading(false)
     }
@@ -282,10 +341,11 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
     setLoading(true)
     try {
       await cancelPayrollConfirmation(statementId, reason)
+      setOpenHistory(null)
       await refresh()
-      setMessage("확정을 취소했습니다.")
+      showInfo("확정을 취소했습니다.")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "확정취소하지 못했습니다.")
+      showError(error, "확정취소하지 못했습니다.")
     } finally {
       setLoading(false)
     }
@@ -301,18 +361,55 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
       setHistories((previous) => ({ ...previous, [statementId]: entries }))
       setOpenHistory(statementId)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "이력을 불러오지 못했습니다.")
+      showError(error, "이력을 불러오지 못했습니다.")
     }
   }
 
   const createCandidates = useMemo(() => employeesInDepartment(createDeptNo), [employeesInDepartment, createDeptNo])
-  const filterCandidates = useMemo(() => employeesInDepartment(filterDeptNo), [employeesInDepartment, filterDeptNo])
+  const filterCandidates = useMemo(
+    () => (filterDeptNo ? employeesInDepartment(filterDeptNo) : employees),
+    [employeesInDepartment, employees, filterDeptNo],
+  )
+
+  // Statements within the selected department/person/period, before the status filter.
+  const scopedStatements = useMemo(() => {
+    const allowed = filterDeptNo ? new Set(filterCandidates.map((employee) => employee.emp_no)) : null
+    return managed.filter(
+      (statement) =>
+        (!allowed || allowed.has(statement.employee_no)) && (!filterPeriod || periodKey(statement) === filterPeriod),
+    )
+  }, [filterCandidates, filterDeptNo, filterPeriod, managed])
+
+  const missingEmployees = useMemo(() => {
+    if (!filterPeriod) return []
+    const scope = filterEmpNo
+      ? employees.filter((employee) => String(employee.emp_no) === filterEmpNo)
+      : filterCandidates
+    const written = new Set(scopedStatements.map((statement) => statement.employee_no))
+    return scope.filter((employee) => employee.tenure_status === "재직" && !written.has(employee.emp_no))
+  }, [employees, filterCandidates, filterEmpNo, filterPeriod, scopedStatements])
+
+  const draftCount = scopedStatements.filter((statement) => statement.status === "작성중").length
+  const confirmedCount = scopedStatements.filter((statement) => statement.status === "확정").length
+  const managedVisible =
+    filterStatus === "all" || filterStatus === "미작성"
+      ? scopedStatements
+      : scopedStatements.filter((statement) => statement.status === filterStatus)
+  const visible = tab === "mine" ? mine : managedVisible
+  const departmentName = (deptNo: number | null) =>
+    departments.find((department) => department.dept_no === deptNo)?.dept_name ?? "부서 미지정"
 
   return (
     <section className="payroll-panel">
-      {message && (
-        <div className="notice" role="status">
-          {message}
+      {notice && (
+        <div
+          className={notice.tone === "error" ? "notice notice--error payroll-alert" : "notice"}
+          role={notice.tone === "error" ? "alert" : "status"}
+        >
+          <span>{notice.tone === "error" ? `⚠ ${notice.text}` : notice.text}</span>
+          <button type="button" className="notice-close" aria-label="알림 닫기" onClick={() => setNotice(null)}>
+            ×
+          </button>
         </div>
       )}
       {isPayrollManager && (
@@ -328,7 +425,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
 
       {tab === "manage" && isPayrollManager && (
         <>
-          <form className="department-form payroll-create-form" onSubmit={submitCreate}>
+          <form ref={createFormRef} className="department-form payroll-create-form" onSubmit={submitCreate}>
             <h3>급여 생성</h3>
             <div className="two-columns">
               <label>
@@ -346,6 +443,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
                       {department.dept_name}
                     </option>
                   ))}
+                  {hasUnassigned && <option value={NO_DEPARTMENT}>부서 미지정</option>}
                 </select>
               </label>
               <label>
@@ -368,12 +466,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
             <div className="two-columns">
               <label>
                 정산연도
-                <input
-                  required
-                  type="number"
-                  value={createYear}
-                  onChange={(event) => setCreateYear(event.target.value)}
-                />
+                <input required type="number" value={createYear} onChange={(event) => setCreateYear(event.target.value)} />
               </label>
               <label>
                 정산월
@@ -392,141 +485,204 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
               급여 생성
             </button>
           </form>
-          <div className="workforce-toolbar payroll-filter-toolbar">
-            <div>
-              <p className="step">FILTER</p>
-              <h3>부서·사람으로 조회</h3>
+
+          <div className="payroll-filter">
+            <div className="payroll-filter-heading">
+              <div>
+                <p className="step">FILTER</p>
+                <h3>부서·사람·상태로 조회</h3>
+              </div>
+              <button className="refresh" type="button" disabled={loading} onClick={() => void refresh()}>
+                새로고침
+              </button>
             </div>
-            <select
-              aria-label="부서 필터"
-              value={filterDeptNo}
-              onChange={(event) => {
-                setFilterDeptNo(event.target.value)
-                setFilterEmpNo("")
-              }}
-            >
-              <option value="">전체 부서</option>
-              {departments.map((department) => (
-                <option key={department.dept_no} value={department.dept_no}>
-                  {department.dept_name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="사람 필터"
-              value={filterEmpNo}
-              onChange={(event) => setFilterEmpNo(event.target.value)}
-            >
-              <option value="">전체 사람</option>
-              {filterCandidates.map((employee) => (
-                <option key={employee.emp_no} value={employee.emp_no}>
-                  {employee.name} ({employee.emp_no})
-                </option>
-              ))}
-            </select>
-            <button className="refresh" type="button" disabled={loading} onClick={() => void refresh()}>
-              새로고침
-            </button>
+            <div className="payroll-filter-controls">
+              <label>
+                부서
+                <select
+                  value={filterDeptNo}
+                  onChange={(event) => {
+                    setFilterDeptNo(event.target.value)
+                    setFilterEmpNo("")
+                  }}
+                >
+                  <option value="">전체 부서</option>
+                  {departments.map((department) => (
+                    <option key={department.dept_no} value={department.dept_no}>
+                      {department.dept_name}
+                    </option>
+                  ))}
+                  {hasUnassigned && <option value={NO_DEPARTMENT}>부서 미지정</option>}
+                </select>
+              </label>
+              <label>
+                사람
+                <select value={filterEmpNo} onChange={(event) => setFilterEmpNo(event.target.value)}>
+                  <option value="">전체 사람</option>
+                  {filterCandidates.map((employee) => (
+                    <option key={employee.emp_no} value={employee.emp_no}>
+                      {employee.name} ({employee.emp_no})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                정산월
+                <input type="month" value={filterPeriod} onChange={(event) => setFilterPeriod(event.target.value)} />
+              </label>
+              <label>
+                상태
+                <select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value as StatusFilter)}>
+                  <option value="all">전체</option>
+                  <option value="작성중">작성중 (확정 필요)</option>
+                  <option value="확정">확정</option>
+                  <option value="미작성">미작성</option>
+                </select>
+              </label>
+            </div>
+            {filterPeriod && (
+              <div className="payroll-status-summary" aria-label="선택한 정산월 처리 현황">
+                <button type="button" onClick={() => setFilterStatus("작성중")}>
+                  작성중(확정 필요) <b>{draftCount}</b>
+                </button>
+                <button type="button" onClick={() => setFilterStatus("미작성")}>
+                  미작성 <b>{missingEmployees.length}</b>
+                </button>
+                <button type="button" onClick={() => setFilterStatus("확정")}>
+                  확정 <b>{confirmedCount}</b>
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}
 
-      <div className="request-list">
-        {visible.length === 0 && <div className="empty">표시할 급여가 없습니다.</div>}
-        {visible.map((item) => (
-          <article className="payslip" key={item.statement_id}>
-            <header className="payslip-header">
-              <h3>
-                {item.year}년 {item.month}월 급여명세서
-              </h3>
-              <span className={`badge badge--payroll-${item.status}`}>{item.status}</span>
-            </header>
-            <dl className="payslip-meta">
-              <div>
-                <dt>성명</dt>
-                <dd>{item.employee.name ?? "-"}</dd>
-              </div>
-              <div>
-                <dt>직급</dt>
-                <dd>{item.employee.position_name ?? "-"}</dd>
-              </div>
-              <div>
-                <dt>사번</dt>
-                <dd>{item.employee_no}</dd>
-              </div>
-              <div>
-                <dt>지급일</dt>
-                <dd>{item.payment_date}</dd>
-              </div>
-            </dl>
-            <PayslipTable statement={item} componentName={componentName} />
+      {tab === "manage" && isPayrollManager && filterStatus === "미작성" ? (
+        <div className="request-list">
+          {!filterPeriod && <div className="empty">미작성 대상을 보려면 정산월을 선택하세요.</div>}
+          {filterPeriod && missingEmployees.length === 0 && (
+            <div className="empty">선택한 정산월에 급여가 없는 재직 사원이 없습니다.</div>
+          )}
+          {filterPeriod && missingEmployees.length > 0 && (
+            <ul className="payroll-missing-list">
+              {missingEmployees.map((employee) => {
+                const isSelf = employee.emp_no === ownEmployeeNo
+                return (
+                  <li key={employee.emp_no}>
+                    <div>
+                      <strong>{employee.name}</strong>
+                      <span>
+                        {departmentName(employee.dept_no)} · #{employee.emp_no}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isSelf}
+                      title={isSelf ? "본인 급여는 다른 급여담당자가 생성해야 합니다." : undefined}
+                      onClick={() => prefillCreate(employee)}
+                    >
+                      {isSelf ? "본인(생성 불가)" : "급여 생성"}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="request-list">
+          {visible.length === 0 && <div className="empty">표시할 급여가 없습니다.</div>}
+          {visible.map((item) => (
+            <article className="payslip" key={item.statement_id}>
+              <header className="payslip-header">
+                <h3>
+                  {item.year}년 {item.month}월 급여명세서
+                </h3>
+                <span className={`badge badge--payroll-${item.status}`}>{item.status}</span>
+              </header>
+              <dl className="payslip-meta">
+                <div>
+                  <dt>성명</dt>
+                  <dd>{item.employee.name ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt>직급</dt>
+                  <dd>{item.employee.position_name ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt>사번</dt>
+                  <dd>{item.employee_no}</dd>
+                </div>
+                <div>
+                  <dt>지급일</dt>
+                  <dd>{item.payment_date}</dd>
+                </div>
+              </dl>
+              <PayslipTable statement={item} components={components} />
 
-            {tab === "manage" && isPayrollManager && item.status === "작성중" && !itemDrafts[item.statement_id] && (
-              <div className="actions">
-                <button onClick={() => beginEditItems(item)} type="button">
-                  구성항목 편집
-                </button>
-                <button className="accent" onClick={() => void confirm(item.statement_id)} type="button">
-                  확정
-                </button>
-              </div>
-            )}
-
-            {tab === "manage" && isPayrollManager && item.status === "확정" && (
-              <div className="actions">
-                <button onClick={() => void cancelConfirmation(item.statement_id)} type="button">
-                  확정취소
-                </button>
-              </div>
-            )}
-
-            {itemDrafts[item.statement_id] && (
-              <div className="payroll-items-editor">
-                <ComponentAmountFields
-                  components={components}
-                  values={itemDrafts[item.statement_id]}
-                  onChange={(code, value) => updateDraftItem(item.statement_id, code, value)}
-                />
+              {tab === "manage" && item.status === "작성중" && !itemDrafts[item.statement_id] && (
                 <div className="actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setItemDrafts((previous) => {
-                        const next = { ...previous }
-                        delete next[item.statement_id]
-                        return next
-                      })
-                    }
-                  >
-                    취소
+                  <button onClick={() => beginEditItems(item)} type="button">
+                    구성항목 편집
                   </button>
-                  <button className="accent" type="button" onClick={() => void saveItems(item.statement_id)}>
-                    저장
+                  <button className="accent" onClick={() => void confirm(item.statement_id)} type="button">
+                    확정
                   </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="actions">
-              <button type="button" onClick={() => void toggleHistory(item.statement_id)}>
-                {openHistory === item.statement_id ? "이력 닫기" : "이력 보기"}
-              </button>
-            </div>
-            {openHistory === item.statement_id && (
-              <ul className="payroll-history">
-                {(histories[item.statement_id] ?? []).map((entry) => (
-                  <li key={entry.history_id}>
-                    <strong>{entry.action}</strong> · {new Date(entry.changed_at).toLocaleString("ko-KR")} · 처리자{" "}
-                    {entry.actor_employee_no}
-                    {entry.reason && <span> · {entry.reason}</span>}
-                  </li>
-                ))}
-                {(histories[item.statement_id] ?? []).length === 0 && <li>이력이 없습니다.</li>}
-              </ul>
-            )}
-          </article>
-        ))}
-      </div>
+              {tab === "manage" && item.status === "확정" && (
+                <div className="actions">
+                  <button onClick={() => void cancelConfirmation(item.statement_id)} type="button">
+                    확정취소
+                  </button>
+                </div>
+              )}
+
+              {itemDrafts[item.statement_id] && (
+                <div className="payroll-items-editor">
+                  <ComponentAmountFields
+                    components={components}
+                    values={itemDrafts[item.statement_id]}
+                    onChange={(code, value) => updateDraftItem(item.statement_id, code, value)}
+                  />
+                  <div className="actions">
+                    <button type="button" onClick={() => closeEditor(item.statement_id)}>
+                      취소
+                    </button>
+                    <button className="accent" type="button" onClick={() => void saveItems(item.statement_id)}>
+                      저장
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="actions">
+                <button type="button" onClick={() => void toggleHistory(item.statement_id)}>
+                  {openHistory === item.statement_id ? "이력 닫기" : "이력 보기"}
+                </button>
+              </div>
+              {openHistory === item.statement_id && (
+                <ul className="payroll-history">
+                  {(histories[item.statement_id] ?? []).map((entry) => {
+                    const detailed = entry.actor_name !== undefined
+                    const changedAt = new Date(entry.changed_at)
+                    return (
+                      <li key={entry.history_id}>
+                        <strong>{entry.action}</strong> ·{" "}
+                        {detailed ? changedAt.toLocaleString("ko-KR") : changedAt.toLocaleDateString("ko-KR")}
+                        {detailed && <> · 처리자 {entry.actor_name ?? "알 수 없음"}</>}
+                        {detailed && entry.reason && <span> · {entry.reason}</span>}
+                      </li>
+                    )
+                  })}
+                  {(histories[item.statement_id] ?? []).length === 0 && <li>이력이 없습니다.</li>}
+                </ul>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

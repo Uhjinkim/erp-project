@@ -136,7 +136,9 @@ class DjangoPayrollHistoryRepository(PayrollHistoryRepository):
     def list_for_statement(self, statement_id: int) -> list[PayrollHistory]:
         return [
             history_to_entity(model)
-            for model in PayrollHistoryModel.objects.filter(statement_id=statement_id)
+            for model in PayrollHistoryModel.objects.filter(statement_id=statement_id).order_by(
+                "-changed_at", "-history_id"
+            )
         ]
 
 
