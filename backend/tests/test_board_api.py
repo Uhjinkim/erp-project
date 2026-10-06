@@ -245,3 +245,23 @@ def test_comment_and_reply_flow() -> None:
     listing_after_delete = client.get(f"/api/board/posts/{post_id}/comments/")
     assert listing_after_delete.status_code == 200
     assert len(listing_after_delete.data) == 1
+
+
+@pytest.mark.django_db
+def test_eligible_notice_categories_reflects_role_assignment() -> None:
+    ordinary = create_employee(1001, "ordinary@example.com")
+    ordinary_user = create_user(ordinary)
+    payroll_employee = create_employee(9001, "payroll@example.com")
+    assign_role(payroll_employee, PAYROLL_MANAGER_ROLE, "급여 담당자")
+    payroll_user = create_user(payroll_employee)
+
+    client = APIClient()
+    client.force_authenticate(ordinary_user)
+    response = client.get("/api/board/notice-categories/eligible/")
+    assert response.status_code == 200
+    assert response.data["categories"] == []
+
+    client.force_authenticate(payroll_user)
+    response = client.get("/api/board/notice-categories/eligible/")
+    assert response.status_code == 200
+    assert response.data["categories"] == ["PAYROLL"]

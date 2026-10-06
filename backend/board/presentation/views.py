@@ -74,6 +74,16 @@ class BoardAPIView(APIView):
         return Response({"code": error.code, "detail": str(error)}, status=response_status)
 
 
+class EligibleNoticeCategoriesView(BoardAPIView):
+    def get(self, request: Request) -> Response:
+        try:
+            employee_no = self.employee_no(request)
+            categories = self.service.workforce.eligible_notice_categories(employee_no)
+            return Response({"categories": sorted(category.value for category in categories)})
+        except BoardError as error:
+            return self.error_response(error)
+
+
 class PostListCreateView(BoardAPIView):
     def get(self, request: Request) -> Response:
         try:

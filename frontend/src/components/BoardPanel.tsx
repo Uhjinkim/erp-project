@@ -5,6 +5,7 @@ import {
   createPost,
   deleteComment,
   deletePost,
+  getEligibleNoticeCategories,
   getPost,
   listComments,
   listPosts,
@@ -51,6 +52,9 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
   const [commentDraft, setCommentDraft] = useState("")
   const [replyTarget, setReplyTarget] = useState<number | null>(null)
   const [replyDraft, setReplyDraft] = useState("")
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
+  const [editingCommentContent, setEditingCommentContent] = useState("")
+  const [eligibleCategories, setEligibleCategories] = useState<NoticeCategory[]>([])
 
   const canModify = useCallback(
     (post: Post) => currentUser.is_superuser || post.writer_employee_no === currentUser.employee?.emp_no,
@@ -75,6 +79,30 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
     const timer = window.setTimeout(() => void refreshList(), 0)
     return () => window.clearTimeout(timer)
   }, [enabled, refreshList])
+
+  useEffect(() => {
+    if (!enabled) return
+    let active = true
+    void getEligibleNoticeCategories().then((categories) => {
+      if (active) setEligibleCategories(categories)
+    }).catch(() => {
+      if (active) setEligibleCategories([])
+    })
+    return () => { active = false }
+  }, [enabled])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (eligibleCategories.length === 0) {
+        setPostForm((current) => (current.postType === "일반" ? current : { ...current, postType: "일반" }))
+        return
+      }
+      if (!eligibleCategories.includes(postForm.noticeCategory)) {
+        setPostForm((current) => ({ ...current, noticeCategory: eligibleCategories[0] }))
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [eligibleCategories, postForm.noticeCategory])
 
   const filteredPosts = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase()
@@ -208,12 +236,23 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
     }
   }
 
-  async function editCommentInline(comment: Comment) {
-    const nextContent = window.prompt("댓글 수정", comment.content)
-    if (nextContent === null || !nextContent.trim()) return
+  function startEditComment(comment: Comment) {
+    setEditingCommentId(comment.comment_id)
+    setEditingCommentContent(comment.content)
+  }
+
+  function cancelEditComment() {
+    setEditingCommentId(null)
+    setEditingCommentContent("")
+  }
+
+  async function submitEditComment(event: FormEvent, commentId: number) {
+    event.preventDefault()
+    if (!editingCommentContent.trim()) return
     setLoading(true)
     try {
-      await updateComment(comment.comment_id, nextContent)
+      await updateComment(commentId, editingCommentContent)
+      cancelEditComment()
       await refreshComments()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "댓글을 수정하지 못했습니다.")
@@ -319,16 +358,31 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
             {topLevelComments.map((comment) => (
               <article className="employee-item" key={comment.comment_id}>
                 <div><strong>{comment.writer_name ?? comment.writer_employee_no}</strong><span>{new Date(comment.created_at).toLocaleString("ko-KR")}</span></div>
-                <p>{comment.content}</p>
-                <div className="actions">
-                  <button type="button" onClick={() => setReplyTarget(comment.comment_id === replyTarget ? null : comment.comment_id)}>답글</button>
-                  {canModifyComment(comment) && (
-                    <>
-                      <button type="button" onClick={() => void editCommentInline(comment)}>수정</button>
-                      <button type="button" onClick={() => void removeComment(comment.comment_id)}>삭제</button>
-                    </>
-                  )}
-                </div>
+                {editingCommentId === comment.comment_id ? (
+                  <form className="department-form" onSubmit={(event) => void submitEditComment(event, comment.comment_id)}>
+                    <input
+                      value={editingCommentContent}
+                      onChange={(event) => setEditingCommentContent(event.target.value)}
+                    />
+                    <div className="actions">
+                      <button className="primary" disabled={loading} type="submit">저장</button>
+                      <button type="button" onClick={cancelEditComment}>취소</button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <p>{comment.content}</p>
+                    <div className="actions">
+                      <button type="button" onClick={() => setReplyTarget(comment.comment_id === replyTarget ? null : comment.comment_id)}>답글</button>
+                      {canModifyComment(comment) && (
+                        <>
+                          <button type="button" onClick={() => startEditComment(comment)}>수정</button>
+                          <button type="button" onClick={() => void removeComment(comment.comment_id)}>삭제</button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
                 {replyTarget === comment.comment_id && (
                   <form className="department-form" onSubmit={(event) => void submitReply(event, comment.comment_id)}>
                     <input
@@ -342,12 +396,27 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
                 {repliesByParent(comment.comment_id).map((reply) => (
                   <article className="employee-item board-reply" key={reply.comment_id}>
                     <div><strong>{reply.writer_name ?? reply.writer_employee_no}</strong><span>{new Date(reply.created_at).toLocaleString("ko-KR")}</span></div>
-                    <p>{reply.content}</p>
-                    {canModifyComment(reply) && (
-                      <div className="actions">
-                        <button type="button" onClick={() => void editCommentInline(reply)}>수정</button>
-                        <button type="button" onClick={() => void removeComment(reply.comment_id)}>삭제</button>
-                      </div>
+                    {editingCommentId === reply.comment_id ? (
+                      <form className="department-form" onSubmit={(event) => void submitEditComment(event, reply.comment_id)}>
+                        <input
+                          value={editingCommentContent}
+                          onChange={(event) => setEditingCommentContent(event.target.value)}
+                        />
+                        <div className="actions">
+                          <button className="primary" disabled={loading} type="submit">저장</button>
+                          <button type="button" onClick={cancelEditComment}>취소</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <p>{reply.content}</p>
+                        {canModifyComment(reply) && (
+                          <div className="actions">
+                            <button type="button" onClick={() => startEditComment(reply)}>수정</button>
+                            <button type="button" onClick={() => void removeComment(reply.comment_id)}>삭제</button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </article>
                 ))}
@@ -363,18 +432,20 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
     <section className="workspace" aria-disabled={!enabled}>
       <form className="request-card" onSubmit={submitNewPost}>
         <div className="section-heading"><div><p className="step">01</p><h2>새 게시글 작성</h2></div></div>
-        <label>
-          게시글 유형
-          <select
-            disabled={!enabled}
-            value={postForm.postType}
-            onChange={(event) => setPostForm({ ...postForm, postType: event.target.value as PostType })}
-          >
-            <option value="일반">일반</option>
-            <option value="공지">공지</option>
-          </select>
-        </label>
-        {postForm.postType === "공지" && (
+        {eligibleCategories.length > 0 && (
+          <label>
+            게시글 유형
+            <select
+              disabled={!enabled}
+              value={postForm.postType}
+              onChange={(event) => setPostForm({ ...postForm, postType: event.target.value as PostType })}
+            >
+              <option value="일반">일반</option>
+              <option value="공지">공지</option>
+            </select>
+          </label>
+        )}
+        {eligibleCategories.length > 0 && postForm.postType === "공지" && (
           <label>
             공지 분류
             <select
@@ -383,7 +454,7 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
               onChange={(event) =>
                 setPostForm({ ...postForm, noticeCategory: event.target.value as NoticeCategory })}
             >
-              {(Object.keys(noticeCategoryLabels) as NoticeCategory[]).map((code) => (
+              {eligibleCategories.map((code) => (
                 <option key={code} value={code}>{noticeCategoryLabels[code]}</option>
               ))}
             </select>
