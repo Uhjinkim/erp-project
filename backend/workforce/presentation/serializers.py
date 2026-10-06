@@ -112,6 +112,48 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return value.strip().lower() if value else value
 
 
+class EmployeeDetailSerializer(serializers.ModelSerializer):
+    """FN-HR-001 인사 정보 조회 응답. 급여계좌(bank_code, account_no)를 포함한다."""
+
+    emp_no = serializers.IntegerField(source="employee_no", read_only=True)
+    person_id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField(source="person.name", read_only=True)
+    birth_date = serializers.DateField(source="person.birth_date", read_only=True)
+    gender = serializers.CharField(source="person.gender", read_only=True)
+    dept_no = serializers.IntegerField(source="department_id", read_only=True)
+    dept_name = serializers.CharField(
+        source="department.dept_name", read_only=True, default=None
+    )
+    position_code = serializers.CharField(source="position_id", read_only=True)
+    position_name = serializers.CharField(
+        source="position.position_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = Employee
+        fields = [
+            "emp_no",
+            "person_id",
+            "name",
+            "birth_date",
+            "gender",
+            "dept_no",
+            "dept_name",
+            "position_code",
+            "position_name",
+            "tenure_status",
+            "email",
+            "phone",
+            "extension_no",
+            "address",
+            "bank_code",
+            "account_no",
+            "hire_date",
+            "term_date",
+        ]
+        read_only_fields = fields
+
+
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
@@ -126,3 +168,65 @@ class EmployeeRoleSerializer(serializers.ModelSerializer):
         model = EmployeeRole
         fields = ["employee_role_id", "emp_no", "role_code", "assigned_at", "revoked_at"]
         read_only_fields = ["employee_role_id", "assigned_at", "revoked_at"]
+
+
+class OwnContactUpdateSerializer(serializers.Serializer):
+    """FN-HR-002 요청 형식. 허용 항목 판단은 도메인 정책(HR-002)이 담당한다."""
+
+    phone = serializers.CharField(
+        max_length=20, required=False, allow_null=True, allow_blank=True
+    )
+    address = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
+
+    def validate_phone(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+    def validate_address(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+
+class ChangeRequestCreateSerializer(serializers.Serializer):
+    """FN-HR-003 요청 형식. 생략하거나 null인 항목은 변경하지 않는다."""
+
+    email = serializers.EmailField(max_length=100, required=False, allow_null=True)
+    bank_code = serializers.CharField(max_length=20, required=False, allow_null=True)
+    account_no = serializers.CharField(max_length=100, required=False, allow_null=True)
+
+    def validate_email(self, value: str | None) -> str | None:
+        return value.strip().lower() if value else None
+
+    def validate_bank_code(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+    def validate_account_no(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+
+class ChangeRequestRejectSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+
+class ApprovalRequiredValuesSerializer(serializers.Serializer):
+    email = serializers.CharField(allow_null=True)
+    bank_code = serializers.CharField(allow_null=True)
+    account_no = serializers.CharField(allow_null=True)
+
+
+class ChangeRequestSerializer(serializers.Serializer):
+    """FN-HR-005 결과·이력 응답."""
+
+    request_id = serializers.IntegerField()
+    emp_no = serializers.IntegerField(source="employee_no")
+    status = serializers.CharField()
+    previous = ApprovalRequiredValuesSerializer()
+    requested = ApprovalRequiredValuesSerializer()
+    changed_fields = serializers.SerializerMethodField()
+    requested_at = serializers.DateTimeField()
+    processed_by = serializers.IntegerField(allow_null=True)
+    processed_at = serializers.DateTimeField(allow_null=True)
+    reject_reason = serializers.CharField(allow_null=True)
+
+    def get_changed_fields(self, request: object) -> list[str]:
+        return request.requested.changed_fields()

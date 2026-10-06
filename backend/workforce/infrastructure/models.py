@@ -152,3 +152,46 @@ class EmployeeRole(models.Model):
     class Meta:
         db_table = "employee_roles"
         ordering = ["employee_id", "role_id", "-assigned_at"]
+
+
+class PersonalInfoChangeRequest(models.Model):
+    """HR-003/HR-011: 사내 이메일·급여계좌 승인형 변경 요청과 처리 이력."""
+
+    class Status(models.TextChoices):
+        PENDING = "대기", "대기"
+        APPROVED = "승인", "승인"
+        REJECTED = "반려", "반려"
+        CANCELLED = "취소", "취소"
+
+    request_id = models.BigAutoField(primary_key=True)
+    employee = models.ForeignKey(
+        Employee,
+        db_column="emp_no",
+        on_delete=models.RESTRICT,
+        related_name="personal_info_change_requests",
+    )
+    previous_email = models.CharField(max_length=100, null=True, blank=True)
+    previous_bank_code = models.CharField(max_length=20, null=True, blank=True)
+    previous_account_no = models.CharField(max_length=100, null=True, blank=True)
+    requested_email = models.CharField(max_length=100, null=True, blank=True)
+    requested_bank_code = models.CharField(max_length=20, null=True, blank=True)
+    requested_account_no = models.CharField(max_length=100, null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    requested_at = models.DateTimeField()
+    processed_by = models.ForeignKey(
+        Employee,
+        db_column="processed_by_emp_no",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="processed_personal_info_change_requests",
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.CharField(max_length=500, null=True, blank=True)
+
+    class Meta:
+        db_table = "personal_info_change_requests"
+        ordering = ["-requested_at", "-request_id"]
+        indexes = [
+            models.Index(fields=["employee", "status"], name="pi_change_req_emp_status_idx"),
+        ]

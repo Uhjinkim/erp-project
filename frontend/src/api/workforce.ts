@@ -1,13 +1,31 @@
 import { requestJson } from "./client"
-import type { DepartmentSummary, EmployeeSummary, PositionSummary } from "../types/workforce"
+import type {
+  ApprovalRequiredValues,
+  ChangeRequestStatus,
+  DepartmentSummary,
+  EmployeeDetail,
+  EmployeeSummary,
+  PersonalInfoChangeRequest,
+  PositionSummary,
+} from "../types/workforce"
 
-export async function loadWorkforce() {
+export async function loadWorkforce(includeEmployees: boolean) {
   const [employees, departments, positions] = await Promise.all([
-    requestJson<EmployeeSummary[]>("/api/workforce/employees/"),
+    includeEmployees
+      ? requestJson<EmployeeSummary[]>("/api/workforce/employees/")
+      : Promise.resolve<EmployeeSummary[]>([]),
     requestJson<DepartmentSummary[]>("/api/workforce/departments/"),
     requestJson<PositionSummary[]>("/api/workforce/positions/"),
   ])
   return { employees, departments, positions }
+}
+
+export async function getMyEmployeeInfo() {
+  return requestJson<EmployeeDetail>("/api/workforce/employees/me/")
+}
+
+export async function getEmployeeDetail(empNo: number) {
+  return requestJson<EmployeeDetail>(`/api/workforce/employees/${empNo}/`)
 }
 
 export async function createDepartment(deptNo: number, deptName: string) {
@@ -20,5 +38,41 @@ export async function createDepartment(deptNo: number, deptName: string) {
       parent_dept_no: null,
       head_emp_no: null,
     }),
+  })
+}
+
+const jsonHeaders = { "Content-Type": "application/json" }
+const changeRequestsPath = "/api/workforce/personal-info-requests/"
+
+export async function updateMyContact(values: { phone: string | null, address: string | null }) {
+  return requestJson<EmployeeDetail>("/api/workforce/employees/me/", {
+    method: "PATCH",
+    headers: jsonHeaders,
+    body: JSON.stringify(values),
+  })
+}
+
+export async function listChangeRequests(status?: ChangeRequestStatus) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : ""
+  return requestJson<PersonalInfoChangeRequest[]>(`${changeRequestsPath}${query}`)
+}
+
+export async function createChangeRequest(values: Partial<ApprovalRequiredValues>) {
+  return requestJson<PersonalInfoChangeRequest>(changeRequestsPath, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(values),
+  })
+}
+
+export async function processChangeRequest(
+  requestId: number,
+  action: "approve" | "reject" | "cancel",
+  reason?: string,
+) {
+  return requestJson<PersonalInfoChangeRequest>(`${changeRequestsPath}${requestId}/${action}/`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(reason ? { reason } : {}),
   })
 }

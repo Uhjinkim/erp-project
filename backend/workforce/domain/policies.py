@@ -45,6 +45,16 @@ def validate_employment_dates(
     return errors
 
 
+def can_view_employee_info(
+    *,
+    viewer_no: int | None,
+    target_no: int,
+    viewer_is_hr_manager: bool,
+) -> bool:
+    """HR-001: 사원은 본인 정보만 조회하고, 타인 정보는 인사관리자만 조회한다."""
+    return viewer_is_hr_manager or (viewer_no is not None and viewer_no == target_no)
+
+
 def choose_vacation_approver(
     *,
     applicant_no: int,
