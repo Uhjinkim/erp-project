@@ -6,12 +6,20 @@ class InvalidEvaluationError(EvaluationError):
     code = "invalid_evaluation"
 
 
+class EvaluationYearNotAllowedError(InvalidEvaluationError):
+    code = "eval_year_not_allowed"
+
+
 class EvaluationPermissionError(EvaluationError):
     code = "permission_denied"
 
 
 class SelfEvaluationError(EvaluationPermissionError):
     code = "self_evaluation_not_allowed"
+
+
+class ConfirmationNotAllowedError(EvaluationPermissionError):
+    code = "confirmation_not_allowed"
 
 
 class InactiveEmployeeError(EvaluationError):
@@ -28,3 +36,7 @@ class DuplicateEvaluationError(EvaluationError):
 
 class EvaluationStateError(EvaluationError):
     code = "invalid_evaluation_state"
+
+
+class EvaluationConflictError(EvaluationError):
+    code = "evaluation_conflict"

@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from evaluation.domain.value_objects import REASON_MAX_LENGTH
+
 
 class EvaluationCreateSerializer(serializers.Serializer):
     emp_no = serializers.IntegerField()
@@ -16,3 +18,17 @@ class EvaluationUpdateSerializer(serializers.Serializer):
 
 class EvaluationListQuerySerializer(serializers.Serializer):
     year = serializers.RegexField(r"^\d{4}$", required=False)
+
+
+class ReasonSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=REASON_MAX_LENGTH)
+
+
+class OptionalReasonSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        max_length=REASON_MAX_LENGTH, required=False, allow_blank=True, default=""
+    )
+
+
+class ReassignSerializer(ReasonSerializer):
+    evaluator_no = serializers.IntegerField()

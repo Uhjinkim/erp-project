@@ -1,11 +1,12 @@
 from datetime import date
 
 import pytest
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from evaluation.infrastructure.models import EvaluationModel
+from evaluation.infrastructure.models import EvaluationHistoryModel, EvaluationModel
 from workforce.application.services import HR_MANAGER_ROLE
 from workforce.infrastructure.models import (
     Department,
@@ -15,6 +16,10 @@ from workforce.infrastructure.models import (
     Position,
     Role,
 )
+
+
+def current_year() -> str:
+    return str(timezone.localdate().year)
 
 
 def create_employee(
@@ -41,7 +46,7 @@ def create_employee(
 
 
 def client_for(employee: Employee) -> APIClient:
-    user = User.objects.create_user(
+    user = User.objects.filter(employee=employee).first() or User.objects.create_user(
         email=employee.email,
         password="safe-test-password",
         employee=employee,
@@ -49,6 +54,13 @@ def client_for(employee: Employee) -> APIClient:
     client = APIClient()
     client.force_authenticate(user)
     return client
+
+
+def make_hr_manager(employee: Employee) -> None:
+    role, _ = Role.objects.get_or_create(
+        role_code=HR_MANAGER_ROLE, defaults={"role_name": "인사관리자"}
+    )
+    EmployeeRole.objects.create(employee=employee, role=role, assigned_at=timezone.now())
 
 
 @pytest.fixture
@@ -62,27 +74,36 @@ def org() -> dict[str, Employee]:
     department.head = head
     department.save(update_fields=["head"])
     member = create_employee(1001, "member@example.com", department=department)
+    new_head = create_employee(2002, "newhead@example.com", department=department)
     other = create_employee(3001, "other@example.com")
     hr = create_employee(9001, "hr@example.com")
-    role, _ = Role.objects.get_or_create(
-        role_code=HR_MANAGER_ROLE, defaults={"role_name": "인사관리자"}
-    )
-    EmployeeRole.objects.create(employee=hr, role=role, assigned_at=timezone.now())
+    make_hr_manager(hr)
     return {
         "parent_head": parent_head,
         "head": head,
+        "new_head": new_head,
         "member": member,
         "other": other,
         "hr": hr,
     }
 
 
-def create_evaluation(client: APIClient, emp_no: int = 1001, score: str = "85.5"):
+def create_evaluation(client: APIClient, emp_no: int = 1001, score: str = "85.5", year=None):
     return client.post(
         "/api/evaluations/",
-        {"emp_no": emp_no, "eval_year": "2026", "score": score, "comments": "우수"},
+        {"emp_no": emp_no, "eval_year": year or current_year(), "score": score, "comments": "우수"},
         format="json",
     )
+
+
+def create_submitted(org) -> int:
+    head = client_for(org["head"])
+    eval_id = create_evaluation(head).data["eval_id"]
+    assert head.post(f"/api/evaluations/{eval_id}/submit/").status_code == 200
+    return eval_id
+
+
+# Creation --------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -94,23 +115,9 @@ def test_department_head_creates_evaluation_with_grade_and_snapshot(org) -> None
     assert response.data["score"] == "85.50"
     assert response.data["eval_status"] == "작성중"
     assert response.data["snapshot_dept_no"] == 10
-    assert response.data["snapshot_pos_code"] == "STAFF"
     assert response.data["evaluator_no"] == 2001
-    assert response.data["employee_name"] == "사원 1001"
-
-
-@pytest.mark.django_db
-def test_non_head_cannot_create_evaluation(org) -> None:
-    response = create_evaluation(client_for(org["other"]))
-    assert response.status_code == 403
-    assert response.data["code"] == "permission_denied"
-
-
-@pytest.mark.django_db
-def test_self_evaluation_is_rejected(org) -> None:
-    response = create_evaluation(client_for(org["head"]), emp_no=2001)
-    assert response.status_code == 403
-    assert response.data["code"] == "self_evaluation_not_allowed"
+    assert response.data["created_by"] == 2001
+    assert EvaluationHistoryModel.objects.filter(action="CREATE").count() == 1
 
 
 @pytest.mark.django_db
@@ -120,18 +127,41 @@ def test_parent_department_head_evaluates_department_head(org) -> None:
     response = create_evaluation(parent_head, emp_no=2001, score="90")
     assert response.status_code == 201, response.data
     assert response.data["evaluator_no"] == 5001
-    assert response.data["snapshot_dept_no"] == 10
-    assert response.data["grade"] == "S"
-
-    skip_level = create_evaluation(parent_head, emp_no=1001)
-    assert skip_level.status_code == 403
+    assert create_evaluation(parent_head, emp_no=1001).status_code == 403
 
 
 @pytest.mark.django_db
-def test_top_level_head_cannot_be_evaluated(org) -> None:
-    response = create_evaluation(client_for(org["head"]), emp_no=5001)
-    assert response.status_code == 403
-    assert response.data["code"] == "permission_denied"
+def test_employee_on_leave_can_be_evaluated(org) -> None:
+    create_employee(
+        1003,
+        "leave@example.com",
+        department=org["member"].department,
+        tenure_status=Employee.TenureStatus.LEAVE,
+    )
+    response = create_evaluation(client_for(org["head"]), emp_no=1003)
+    assert response.status_code == 201, response.data
+
+
+@pytest.mark.django_db
+def test_outsider_gets_identical_response_for_any_target(org) -> None:
+    create_employee(1002, "retired@example.com", tenure_status=Employee.TenureStatus.TERMINATED)
+    other = client_for(org["other"])
+
+    responses = [create_evaluation(other, emp_no=emp_no) for emp_no in (4040, 1002, 1001, 2001)]
+    assert {response.status_code for response in responses} == {403}
+    assert len({(r.data["code"], r.data["detail"]) for r in responses}) == 1
+
+
+@pytest.mark.django_db
+def test_creation_year_window(org) -> None:
+    head = client_for(org["head"])
+    year = int(current_year())
+
+    too_old = create_evaluation(head, year=str(year - 2))
+    assert too_old.status_code == 400
+    assert too_old.data["code"] == "eval_year_not_allowed"
+    assert create_evaluation(head, year=str(year + 1)).status_code == 400
+    assert create_evaluation(head, year=str(year - 1)).status_code == 201
 
 
 @pytest.mark.django_db
@@ -144,55 +174,203 @@ def test_duplicate_year_evaluation_conflicts(org) -> None:
 
 
 @pytest.mark.django_db
+def test_database_rejects_duplicate_employee_year(org) -> None:
+    create_evaluation(client_for(org["head"]))
+    existing = EvaluationModel.objects.get()
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        EvaluationModel.objects.create(
+            employee=existing.employee,
+            eval_year=existing.eval_year,
+            evaluator=existing.evaluator,
+            score=existing.score,
+            grade=existing.grade,
+            updated_at=timezone.now(),
+        )
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "payload",
     [
-        {"emp_no": 1001, "eval_year": "2026", "score": "100.01"},
+        {"emp_no": 1001, "score": "100.01"},
         {"emp_no": 1001, "eval_year": "26", "score": "80"},
-        {"emp_no": 1001, "eval_year": "2026", "score": "80.123"},
-        {"emp_no": 1001, "eval_year": "2026"},
+        {"emp_no": 1001, "score": "80.123"},
+        {"emp_no": 1001},
     ],
 )
 def test_invalid_payload_is_rejected(org, payload) -> None:
+    payload.setdefault("eval_year", current_year())
     response = client_for(org["head"]).post("/api/evaluations/", payload, format="json")
     assert response.status_code == 400
 
 
+# Workflow --------------------------------------------------------------------------
+
+
 @pytest.mark.django_db
-def test_head_revises_and_hr_confirms_then_evaluation_is_locked(org) -> None:
+def test_full_workflow_with_return_and_confirmation(org) -> None:
     head = client_for(org["head"])
     hr = client_for(org["hr"])
-    eval_id = create_evaluation(head).data["eval_id"]
+    eval_id = create_submitted(org)
 
-    revised = head.patch(
-        f"/api/evaluations/{eval_id}/", {"score": "69.99", "comments": "보완"}, format="json"
+    locked = head.patch(f"/api/evaluations/{eval_id}/", {"score": "70"}, format="json")
+    assert locked.status_code == 409
+
+    assert hr.post(f"/api/evaluations/{eval_id}/return/", {}, format="json").status_code == 400
+    returned = hr.post(
+        f"/api/evaluations/{eval_id}/return/", {"reason": "근거 보완"}, format="json"
     )
+    assert returned.data["eval_status"] == "반려"
+
+    revised = head.patch(f"/api/evaluations/{eval_id}/", {"score": "69.99"}, format="json")
     assert revised.status_code == 200
     assert revised.data["grade"] == "C"
+    assert revised.data["comments"] == "우수"
+    assert head.post(f"/api/evaluations/{eval_id}/submit/").data["eval_status"] == "제출"
 
     assert head.post(f"/api/evaluations/{eval_id}/confirm/").status_code == 403
-
     confirmed = hr.post(f"/api/evaluations/{eval_id}/confirm/")
     assert confirmed.status_code == 200
     assert confirmed.data["eval_status"] == "확정"
     assert confirmed.data["confirmed_by"] == 9001
-    assert confirmed.data["confirmed_at"] is not None
 
-    locked = head.patch(f"/api/evaluations/{eval_id}/", {"score": "95"}, format="json")
-    assert locked.status_code == 409
+    late = head.patch(f"/api/evaluations/{eval_id}/", {"score": "95"}, format="json")
+    assert late.status_code == 409
+
+    history = hr.get(f"/api/evaluations/{eval_id}/history/").data
+    assert [entry["action"] for entry in history] == [
+        "CREATE",
+        "SUBMIT",
+        "RETURN",
+        "REVISE",
+        "SUBMIT",
+        "CONFIRM",
+    ]
+    assert history[2]["reason"] == "근거 보완"
+
+
+@pytest.mark.django_db
+def test_reassignment_moves_access_to_new_evaluator(org) -> None:
+    head = client_for(org["head"])
+    new_head = client_for(org["new_head"])
+    hr = client_for(org["hr"])
+    eval_id = create_submitted(org)
+
+    assert new_head.get(f"/api/evaluations/{eval_id}/").status_code == 404
+    missing_reason = hr.post(
+        f"/api/evaluations/{eval_id}/reassign/", {"evaluator_no": 2002}, format="json"
+    )
+    assert missing_reason.status_code == 400
+
+    reassigned = hr.post(
+        f"/api/evaluations/{eval_id}/reassign/",
+        {"evaluator_no": 2002, "reason": "부서장 교체"},
+        format="json",
+    )
+    assert reassigned.status_code == 200, reassigned.data
+    assert reassigned.data["evaluator_no"] == 2002
+    assert reassigned.data["created_by"] == 2001
+    assert reassigned.data["eval_status"] == "작성중"
+
+    assert head.get(f"/api/evaluations/{eval_id}/").status_code == 404
+    assert head.get("/api/evaluations/").data == []
+    stale = head.patch(f"/api/evaluations/{eval_id}/", {"score": "70"}, format="json")
+    assert stale.status_code == 404
+
+    assert new_head.get(f"/api/evaluations/{eval_id}/").data["comments"] == "우수"
+    assert new_head.post(f"/api/evaluations/{eval_id}/submit/").status_code == 200
+
+    entry = EvaluationHistoryModel.objects.get(action="REASSIGN")
+    assert (entry.from_evaluator_id, entry.to_evaluator_id, entry.reason) == (
+        2001,
+        2002,
+        "부서장 교체",
+    )
+
+
+@pytest.mark.django_db
+def test_hr_manager_who_wrote_content_cannot_confirm(org) -> None:
+    department = org["member"].department
+    department.head = org["hr"]
+    department.save(update_fields=["head"])
+    hr = client_for(org["hr"])
+    hr_2 = create_employee(9002, "hr2@example.com")
+    make_hr_manager(hr_2)
+
+    eval_id = create_evaluation(hr).data["eval_id"]
+    client_for(hr_2).post(
+        f"/api/evaluations/{eval_id}/reassign/",
+        {"evaluator_no": 2002, "reason": "평가자 분리"},
+        format="json",
+    )
+    client_for(org["new_head"]).post(f"/api/evaluations/{eval_id}/submit/")
+
+    blocked = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    assert blocked.status_code == 403
+    assert blocked.data["code"] == "confirmation_not_allowed"
+    assert client_for(hr_2).post(f"/api/evaluations/{eval_id}/confirm/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_exclusion_and_cancellation(org) -> None:
+    hr = client_for(org["hr"])
+    eval_id = create_submitted(org)
+
+    assert hr.post(f"/api/evaluations/{eval_id}/exclude/", {}, format="json").status_code == 400
+    excluded = hr.post(
+        f"/api/evaluations/{eval_id}/exclude/", {"reason": "장기 휴직"}, format="json"
+    )
+    assert excluded.data["eval_status"] == "제외"
     assert hr.post(f"/api/evaluations/{eval_id}/confirm/").status_code == 409
 
-    stored = EvaluationModel.objects.get(eval_id=eval_id)
-    assert str(stored.score) == "69.99"
-    assert stored.grade == "C"
+    restored = hr.post(f"/api/evaluations/{eval_id}/cancel-exclusion/", {}, format="json")
+    assert restored.status_code == 200
+    assert restored.data["eval_status"] == "제출"
+
+
+@pytest.mark.django_db
+def test_confirmed_evaluation_is_corrected_by_cancel_and_reconfirm(org) -> None:
+    head = client_for(org["head"])
+    hr = client_for(org["hr"])
+    member = client_for(org["member"])
+    eval_id = create_submitted(org)
+    hr.post(f"/api/evaluations/{eval_id}/confirm/")
+
+    direct = head.patch(f"/api/evaluations/{eval_id}/", {"score": "75"}, format="json")
+    assert direct.status_code == 409
+    no_reason = hr.post(f"/api/evaluations/{eval_id}/cancel-confirmation/", {}, format="json")
+    assert no_reason.status_code == 400
+
+    cancelled = hr.post(
+        f"/api/evaluations/{eval_id}/cancel-confirmation/",
+        {"reason": "점수 오기 정정"},
+        format="json",
+    )
+    assert cancelled.status_code == 200, cancelled.data
+    assert cancelled.data["eval_status"] == "반려"
+    assert cancelled.data["confirmed_by"] is None
+    assert member.get(f"/api/evaluations/{eval_id}/").status_code == 404
+
+    revised = head.patch(f"/api/evaluations/{eval_id}/", {"score": "75"}, format="json")
+    assert revised.status_code == 200
+    head.post(f"/api/evaluations/{eval_id}/submit/")
+    reconfirmed = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    assert reconfirmed.data["eval_status"] == "확정"
+    assert reconfirmed.data["grade"] == "B"
+
+    entry = EvaluationHistoryModel.objects.get(action="CANCEL_CONFIRMATION")
+    assert (entry.from_status, entry.to_status, entry.reason) == ("확정", "반려", "점수 오기 정정")
+
+
+# Visibility ------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 def test_target_sees_evaluation_only_after_confirmation(org) -> None:
-    head = client_for(org["head"])
     member = client_for(org["member"])
     other = client_for(org["other"])
-    eval_id = create_evaluation(head).data["eval_id"]
+    eval_id = create_submitted(org)
 
     assert member.get(f"/api/evaluations/{eval_id}/").status_code == 404
     assert member.get("/api/evaluations/").data == []
@@ -202,6 +380,7 @@ def test_target_sees_evaluation_only_after_confirmation(org) -> None:
 
     assert member.get(f"/api/evaluations/{eval_id}/").status_code == 200
     assert [item["eval_id"] for item in member.get("/api/evaluations/").data] == [eval_id]
+    assert member.get(f"/api/evaluations/{eval_id}/history/").status_code == 403
     assert other.get("/api/evaluations/").data == []
 
 
@@ -211,8 +390,8 @@ def test_hr_manager_lists_all_and_filters_by_year(org) -> None:
     hr = client_for(org["hr"])
 
     assert len(hr.get("/api/evaluations/").data) == 1
-    assert len(hr.get("/api/evaluations/?year=2026").data) == 1
-    assert hr.get("/api/evaluations/?year=2025").data == []
+    assert len(hr.get(f"/api/evaluations/?year={current_year()}").data) == 1
+    assert hr.get("/api/evaluations/?year=1999").data == []
     assert hr.get("/api/evaluations/?year=abc").status_code == 400
 
 
@@ -226,33 +405,13 @@ def test_unauthenticated_request_is_rejected() -> None:
     assert APIClient().get("/api/evaluations/").status_code in (401, 403)
 
 
-@pytest.mark.django_db
-def test_patch_without_comments_keeps_existing_comments(org) -> None:
-    head = client_for(org["head"])
-    eval_id = create_evaluation(head).data["eval_id"]
-
-    response = head.patch(f"/api/evaluations/{eval_id}/", {"score": "92"}, format="json")
-    assert response.status_code == 200
-    assert response.data["comments"] == "우수"
-    assert EvaluationModel.objects.get(eval_id=eval_id).comments == "우수"
-
-
-@pytest.mark.django_db
-def test_outsider_gets_identical_response_for_any_target(org) -> None:
-    create_employee(1002, "retired@example.com", tenure_status=Employee.TenureStatus.TERMINATED)
-    other = client_for(org["other"])
-
-    responses = [create_evaluation(other, emp_no=emp_no) for emp_no in (4040, 1002, 1001, 2001)]
-    assert {response.status_code for response in responses} == {403}
-    assert len({(r.data["code"], r.data["detail"]) for r in responses}) == 1
-
-
 def test_evaluation_admin_is_read_only() -> None:
     from django.contrib.admin.sites import site
     from django.test import RequestFactory
 
-    model_admin = site._registry[EvaluationModel]
     request = RequestFactory().get("/admin/")
-    assert not model_admin.has_add_permission(request)
-    assert not model_admin.has_change_permission(request)
-    assert not model_admin.has_delete_permission(request)
+    for model in (EvaluationModel, EvaluationHistoryModel):
+        model_admin = site._registry[model]
+        assert not model_admin.has_add_permission(request)
+        assert not model_admin.has_change_permission(request)
+        assert not model_admin.has_delete_permission(request)

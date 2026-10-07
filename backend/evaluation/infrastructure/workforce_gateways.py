@@ -25,7 +25,9 @@ class DjangoWorkforceGateway(WorkforceGateway):
         parent = department.parent if department is not None else None
         return EvaluationTarget(
             employee_no=employee.employee_no,
-            is_active=employee.is_active_employee,
+            # 휴직자 remain evaluable; only 퇴사 removes an employee from new evaluations.
+            is_employed=employee.tenure_status != Employee.TenureStatus.TERMINATED
+            and employee.term_date is None,
             department_no=employee.department_id,
             position_code=employee.position_id,
             department_head_no=department.head_id if department is not None else None,

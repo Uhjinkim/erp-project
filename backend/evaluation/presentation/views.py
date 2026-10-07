@@ -1,7 +1,8 @@
+from collections.abc import Callable
 from functools import cached_property
 
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -9,24 +10,31 @@ from rest_framework.views import APIView
 
 from evaluation.application.dto import (
     CreateEvaluationCommand,
+    ReassignEvaluationCommand,
     ReviseEvaluationCommand,
     evaluation_to_dict,
+    history_to_dict,
 )
 from evaluation.application.service import EvaluationService
+from evaluation.domain.entities import Evaluation
 from evaluation.domain.exceptions import (
     DuplicateEvaluationError,
+    EvaluationConflictError,
     EvaluationError,
     EvaluationNotFoundError,
     EvaluationPermissionError,
     EvaluationStateError,
     InactiveEmployeeError,
 )
-from evaluation.infrastructure.repositories import DjangoEvaluationRepository
+from evaluation.infrastructure.repositories import DjangoEvaluationUnitOfWork
 from evaluation.infrastructure.workforce_gateways import DjangoWorkforceGateway
 from evaluation.presentation.serializers import (
     EvaluationCreateSerializer,
     EvaluationListQuerySerializer,
     EvaluationUpdateSerializer,
+    OptionalReasonSerializer,
+    ReasonSerializer,
+    ReassignSerializer,
 )
 from workforce.presentation.permissions import request_employee_no
 
@@ -37,9 +45,10 @@ class EvaluationAPIView(APIView):
     @cached_property
     def service(self) -> EvaluationService:
         return EvaluationService(
-            repository=DjangoEvaluationRepository(),
+            unit_of_work_factory=DjangoEvaluationUnitOfWork,
             workforce=DjangoWorkforceGateway(),
             clock=timezone.now,
+            today=timezone.localdate,
         )
 
     def employee_no(self, request: Request) -> int:
@@ -54,9 +63,23 @@ class EvaluationAPIView(APIView):
             response_status = status.HTTP_403_FORBIDDEN
         elif isinstance(error, EvaluationNotFoundError):
             response_status = status.HTTP_404_NOT_FOUND
-        elif isinstance(error, (DuplicateEvaluationError, EvaluationStateError)):
+        elif isinstance(
+            error, (DuplicateEvaluationError, EvaluationStateError, EvaluationConflictError)
+        ):
             response_status = status.HTTP_409_CONFLICT
         return Response({"code": error.code, "detail": str(error)}, status=response_status)
+
+    def run(self, action: Callable[[], Evaluation], success_status: int = 200) -> Response:
+        try:
+            return Response(evaluation_to_dict(action()), status=success_status)
+        except EvaluationError as error:
+            return self.error_response(error)
+
+    @staticmethod
+    def validated(serializer_class: type[serializers.Serializer], request: Request) -> dict:
+        serializer = serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return dict(serializer.validated_data)
 
 
 class EvaluationListCreateView(EvaluationAPIView):
@@ -73,11 +96,9 @@ class EvaluationListCreateView(EvaluationAPIView):
             return self.error_response(error)
 
     def post(self, request: Request) -> Response:
-        serializer = EvaluationCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        try:
-            item = self.service.create_evaluation(
+        data = self.validated(EvaluationCreateSerializer, request)
+        return self.run(
+            lambda: self.service.create_evaluation(
                 CreateEvaluationCommand(
                     evaluator_no=self.employee_no(request),
                     employee_no=data["emp_no"],
@@ -85,26 +106,19 @@ class EvaluationListCreateView(EvaluationAPIView):
                     score=data["score"],
                     comments=data["comments"],
                 )
-            )
-            return Response(evaluation_to_dict(item), status=status.HTTP_201_CREATED)
-        except EvaluationError as error:
-            return self.error_response(error)
+            ),
+            status.HTTP_201_CREATED,
+        )
 
 
 class EvaluationDetailView(EvaluationAPIView):
     def get(self, request: Request, eval_id: int) -> Response:
-        try:
-            item = self.service.get_evaluation(eval_id, self.employee_no(request))
-            return Response(evaluation_to_dict(item))
-        except EvaluationError as error:
-            return self.error_response(error)
+        return self.run(lambda: self.service.get_evaluation(eval_id, self.employee_no(request)))
 
     def patch(self, request: Request, eval_id: int) -> Response:
-        serializer = EvaluationUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        try:
-            item = self.service.revise_evaluation(
+        data = self.validated(EvaluationUpdateSerializer, request)
+        return self.run(
+            lambda: self.service.revise_evaluation(
                 ReviseEvaluationCommand(
                     eval_id=eval_id,
                     actor_no=self.employee_no(request),
@@ -112,15 +126,82 @@ class EvaluationDetailView(EvaluationAPIView):
                     comments=data.get("comments"),
                 )
             )
-            return Response(evaluation_to_dict(item))
+        )
+
+
+class EvaluationHistoryView(EvaluationAPIView):
+    def get(self, request: Request, eval_id: int) -> Response:
+        try:
+            entries = self.service.list_history(eval_id, self.employee_no(request))
+            return Response([history_to_dict(entry) for entry in entries])
         except EvaluationError as error:
             return self.error_response(error)
+
+
+class EvaluationSubmitView(EvaluationAPIView):
+    def post(self, request: Request, eval_id: int) -> Response:
+        return self.run(
+            lambda: self.service.submit_evaluation(eval_id, self.employee_no(request))
+        )
+
+
+class EvaluationReturnView(EvaluationAPIView):
+    def post(self, request: Request, eval_id: int) -> Response:
+        data = self.validated(ReasonSerializer, request)
+        return self.run(
+            lambda: self.service.return_evaluation(
+                eval_id, self.employee_no(request), data["reason"]
+            )
+        )
+
+
+class EvaluationReassignView(EvaluationAPIView):
+    def post(self, request: Request, eval_id: int) -> Response:
+        data = self.validated(ReassignSerializer, request)
+        return self.run(
+            lambda: self.service.reassign_evaluation(
+                ReassignEvaluationCommand(
+                    eval_id=eval_id,
+                    actor_no=self.employee_no(request),
+                    new_evaluator_no=data["evaluator_no"],
+                    reason=data["reason"],
+                )
+            )
+        )
 
 
 class EvaluationConfirmView(EvaluationAPIView):
     def post(self, request: Request, eval_id: int) -> Response:
-        try:
-            item = self.service.confirm_evaluation(eval_id, self.employee_no(request))
-            return Response(evaluation_to_dict(item))
-        except EvaluationError as error:
-            return self.error_response(error)
+        return self.run(
+            lambda: self.service.confirm_evaluation(eval_id, self.employee_no(request))
+        )
+
+
+class EvaluationCancelConfirmationView(EvaluationAPIView):
+    def post(self, request: Request, eval_id: int) -> Response:
+        data = self.validated(ReasonSerializer, request)
+        return self.run(
+            lambda: self.service.cancel_confirmation(
+                eval_id, self.employee_no(request), data["reason"]
+            )
+        )
+
+
+class EvaluationExcludeView(EvaluationAPIView):
+    def post(self, request: Request, eval_id: int) -> Response:
+        data = self.validated(ReasonSerializer, request)
+        return self.run(
+            lambda: self.service.exclude_evaluation(
+                eval_id, self.employee_no(request), data["reason"]
+            )
+        )
+
+
+class EvaluationCancelExclusionView(EvaluationAPIView):
+    def post(self, request: Request, eval_id: int) -> Response:
+        data = self.validated(OptionalReasonSerializer, request)
+        return self.run(
+            lambda: self.service.cancel_exclusion(
+                eval_id, self.employee_no(request), data["reason"]
+            )
+        )

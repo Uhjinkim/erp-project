@@ -8,25 +8,38 @@ import pytest
 
 from evaluation.domain.entities import (
     Evaluation,
+    EvaluationAction,
+    EvaluationHistory,
     EvaluationStatus,
     EvaluationTarget,
     ensure_can_evaluate,
+    restorable_status,
 )
 from evaluation.domain.exceptions import (
+    ConfirmationNotAllowedError,
     EvaluationPermissionError,
     EvaluationStateError,
+    EvaluationYearNotAllowedError,
     InvalidEvaluationError,
     SelfEvaluationError,
 )
-from evaluation.domain.value_objects import EvaluationScore, EvaluationYear, Grade
+from evaluation.domain.value_objects import (
+    EvaluationScore,
+    EvaluationYear,
+    Grade,
+    Reason,
+    ensure_creatable_year,
+)
 
 NOW = datetime(2026, 10, 6, tzinfo=UTC)
 HEAD = 2001
 MEMBER = 1001
 PARENT_HEAD = 5001
+NEW_EVALUATOR = 2002
+HR = 9001
 TARGET = EvaluationTarget(
     employee_no=MEMBER,
-    is_active=True,
+    is_employed=True,
     department_no=10,
     position_code="STAFF",
     department_head_no=HEAD,
@@ -34,7 +47,7 @@ TARGET = EvaluationTarget(
 
 
 def make_draft(score: str = "85") -> Evaluation:
-    return Evaluation.draft(
+    evaluation = Evaluation.draft(
         target=TARGET,
         evaluator_no=HEAD,
         eval_year="2026",
@@ -42,6 +55,17 @@ def make_draft(score: str = "85") -> Evaluation:
         comments="성실함",
         now=NOW,
     )
+    evaluation.eval_id = 1
+    return evaluation
+
+
+def submitted() -> Evaluation:
+    evaluation = make_draft()
+    evaluation.submit(HEAD, NOW)
+    return evaluation
+
+
+# Value objects ---------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -73,6 +97,26 @@ def test_eval_year_must_be_four_ascii_digits(year: str) -> None:
         EvaluationYear(year)
 
 
+@pytest.mark.parametrize("year", ["2026", "2025"])
+def test_new_evaluation_allows_current_and_previous_year(year: str) -> None:
+    ensure_creatable_year(year, 2026)
+
+
+@pytest.mark.parametrize("year", ["2024", "2027", "0000"])
+def test_new_evaluation_rejects_other_years(year: str) -> None:
+    with pytest.raises(EvaluationYearNotAllowedError):
+        ensure_creatable_year(year, 2026)
+
+
+@pytest.mark.parametrize("reason", ["", "   ", "x" * 256])
+def test_reason_is_required_and_bounded(reason: str) -> None:
+    with pytest.raises(InvalidEvaluationError):
+        Reason(reason)
+
+
+# Evaluator selection (EV-001/EV-002) -----------------------------------------------
+
+
 def test_ev001_department_head_creates_draft_with_snapshot() -> None:
     evaluation = make_draft("91.5")
 
@@ -81,6 +125,7 @@ def test_ev001_department_head_creates_draft_with_snapshot() -> None:
     assert evaluation.snapshot_department_no == 10
     assert evaluation.snapshot_position_code == "STAFF"
     assert evaluation.evaluator_no == HEAD
+    assert evaluation.created_by == HEAD
 
 
 def test_ev001_only_department_head_can_evaluate() -> None:
@@ -98,7 +143,6 @@ def test_ev002_self_evaluation_is_rejected_even_for_department_head() -> None:
     head_target = EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD, PARENT_HEAD)
     with pytest.raises(SelfEvaluationError):
         ensure_can_evaluate(HEAD, head_target)
-
 
 
 def test_ev001_department_head_is_evaluated_by_parent_department_head() -> None:
@@ -127,44 +171,247 @@ def test_ev002_head_of_both_department_and_parent_cannot_self_evaluate() -> None
         ensure_can_evaluate(HEAD, head_target)
 
 
-def test_evaluator_can_revise_draft_and_grade_is_recalculated() -> None:
+def test_permission_message_does_not_reveal_target_role() -> None:
+    head_target = EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD, PARENT_HEAD)
+    messages = set()
+    for target in (TARGET, head_target):
+        with pytest.raises(EvaluationPermissionError) as error:
+            ensure_can_evaluate(3001, target)
+        messages.add(str(error.value))
+    assert len(messages) == 1
+
+
+# Evaluator actions -----------------------------------------------------------------
+
+
+def test_evaluator_revises_draft_and_grade_is_recalculated() -> None:
     evaluation = make_draft("85")
-    evaluation.revise(HEAD, Decimal("65"), "보완 필요", NOW)
+    history = evaluation.revise(HEAD, Decimal("65"), "보완 필요", NOW)
 
     assert evaluation.score == Decimal("65")
     assert evaluation.grade == Grade.C
     assert evaluation.comments == "보완 필요"
+    assert history.action == EvaluationAction.REVISE
+    assert history.score == Decimal("65")
 
 
-def test_only_evaluator_can_revise() -> None:
+def test_revise_without_comments_keeps_text() -> None:
+    evaluation = make_draft()
+    evaluation.revise(HEAD, Decimal("90"), None, NOW)
+    assert evaluation.comments == "성실함"
+
+
+def test_only_current_evaluator_can_revise_or_submit() -> None:
     evaluation = make_draft()
     with pytest.raises(EvaluationPermissionError):
         evaluation.revise(3001, Decimal("90"), "", NOW)
+    with pytest.raises(EvaluationPermissionError):
+        evaluation.submit(HR, NOW)
 
 
-def test_ev004_confirmed_evaluation_is_locked() -> None:
+def test_submitted_evaluation_must_be_returned_before_editing() -> None:
+    evaluation = submitted()
+    assert evaluation.status == EvaluationStatus.SUBMITTED
+
+    with pytest.raises(EvaluationStateError):
+        evaluation.revise(HEAD, Decimal("90"), None, NOW)
+
+    history = evaluation.return_for_revision(HR, "근거 보완", NOW)
+    assert evaluation.status == EvaluationStatus.RETURNED
+    assert history.reason == "근거 보완"
+
+    evaluation.revise(HEAD, Decimal("90"), None, NOW)
+    evaluation.submit(HEAD, NOW)
+    assert evaluation.status == EvaluationStatus.SUBMITTED
+
+
+def test_return_requires_reason_and_submitted_state() -> None:
+    with pytest.raises(InvalidEvaluationError):
+        submitted().return_for_revision(HR, " ", NOW)
+    with pytest.raises(EvaluationStateError):
+        make_draft().return_for_revision(HR, "사유", NOW)
+
+
+# Reassignment ----------------------------------------------------------------------
+
+
+def test_reassign_moves_authority_and_keeps_first_author() -> None:
     evaluation = make_draft()
-    evaluation.confirm(9001, NOW)
+    history = evaluation.reassign(HR, NEW_EVALUATOR, "부서장 교체", NOW)
 
+    assert evaluation.evaluator_no == NEW_EVALUATOR
+    assert evaluation.created_by == HEAD
+    assert history.from_evaluator_no == HEAD
+    assert history.to_evaluator_no == NEW_EVALUATOR
+    with pytest.raises(EvaluationPermissionError):
+        evaluation.revise(HEAD, Decimal("70"), None, NOW)
+    evaluation.revise(NEW_EVALUATOR, Decimal("70"), None, NOW)
+
+
+def test_reassigning_submitted_evaluation_returns_it_to_draft_for_review() -> None:
+    evaluation = submitted()
+    evaluation.reassign(HR, NEW_EVALUATOR, "부서장 교체", NOW)
+    assert evaluation.status == EvaluationStatus.DRAFT
+
+
+def test_reassigning_returned_evaluation_keeps_returned_state() -> None:
+    evaluation = submitted()
+    evaluation.return_for_revision(HR, "보완", NOW)
+    evaluation.reassign(HR, NEW_EVALUATOR, "부서장 교체", NOW)
+    assert evaluation.status == EvaluationStatus.RETURNED
+
+
+def test_reassign_guards() -> None:
+    with pytest.raises(SelfEvaluationError):
+        make_draft().reassign(HR, MEMBER, "사유", NOW)
+    with pytest.raises(InvalidEvaluationError):
+        make_draft().reassign(HR, HEAD, "사유", NOW)
+    with pytest.raises(InvalidEvaluationError):
+        make_draft().reassign(HR, NEW_EVALUATOR, "", NOW)
+    with pytest.raises(EvaluationPermissionError):
+        make_draft().reassign(MEMBER, NEW_EVALUATOR, "사유", NOW)
+
+    confirmed = submitted()
+    confirmed.confirm(HR, {HEAD}, NOW)
+    with pytest.raises(EvaluationStateError):
+        confirmed.reassign(HR, NEW_EVALUATOR, "사유", NOW)
+
+
+# Confirmation (EV-004 + separation of duties) --------------------------------------
+
+
+def test_ev004_confirm_requires_submission() -> None:
+    with pytest.raises(EvaluationStateError):
+        make_draft().confirm(HR, {HEAD}, NOW)
+
+    evaluation = submitted()
+    evaluation.confirm(HR, {HEAD}, NOW)
     assert evaluation.status == EvaluationStatus.CONFIRMED
-    assert evaluation.confirmed_by == 9001
+    assert evaluation.confirmed_by == HR
     assert evaluation.confirmed_at == NOW
+
+
+@pytest.mark.parametrize(
+    ("actor", "authors"),
+    [
+        (MEMBER, {HEAD}),  # the evaluated employee
+        (HEAD, {HEAD}),  # the current evaluator
+        (HR, {HEAD, HR}),  # a former evaluator who wrote part of the content
+    ],
+)
+def test_confirmer_must_be_independent(actor: int, authors: set[int]) -> None:
+    with pytest.raises(ConfirmationNotAllowedError):
+        submitted().confirm(actor, authors, NOW)
+
+
+def test_confirmed_evaluation_is_locked() -> None:
+    evaluation = submitted()
+    evaluation.confirm(HR, {HEAD}, NOW)
+
     with pytest.raises(EvaluationStateError):
         evaluation.revise(HEAD, Decimal("90"), "", NOW)
     with pytest.raises(EvaluationStateError):
-        evaluation.confirm(9001, NOW)
+        evaluation.confirm(9002, {HEAD}, NOW)
+    with pytest.raises(EvaluationStateError):
+        evaluation.exclude(HR, "사유", NOW)
 
 
-def test_target_sees_own_evaluation_only_after_confirmation() -> None:
+def test_cancel_confirmation_returns_evaluation_to_evaluator() -> None:
+    evaluation = submitted()
+    evaluation.confirm(HR, {HEAD}, NOW)
+
+    history = evaluation.cancel_confirmation(9002, "점수 오기 정정", NOW)
+    assert evaluation.status == EvaluationStatus.RETURNED
+    assert evaluation.confirmed_by is None
+    assert evaluation.confirmed_at is None
+    assert history.action == EvaluationAction.CANCEL_CONFIRMATION
+    assert history.reason == "점수 오기 정정"
+    assert not evaluation.is_visible_to(MEMBER, viewer_is_hr_manager=False)
+
+    evaluation.revise(HEAD, Decimal("75"), None, NOW)
+    evaluation.submit(HEAD, NOW)
+    evaluation.confirm(HR, {HEAD}, NOW)
+    assert evaluation.status == EvaluationStatus.CONFIRMED
+    assert evaluation.grade == Grade.B
+
+
+def test_cancel_confirmation_guards() -> None:
+    with pytest.raises(EvaluationStateError):
+        submitted().cancel_confirmation(HR, "사유", NOW)
+
+    confirmed = submitted()
+    confirmed.confirm(HR, {HEAD}, NOW)
+    with pytest.raises(InvalidEvaluationError):
+        confirmed.cancel_confirmation(HR, " ", NOW)
+    with pytest.raises(EvaluationPermissionError):
+        confirmed.cancel_confirmation(MEMBER, "사유", NOW)
+
+
+# Exclusion -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("prepare", [make_draft, submitted])
+def test_exclusion_is_a_separate_state_and_can_be_cancelled(prepare) -> None:
+    evaluation = prepare()
+    before = evaluation.status
+    history = evaluation.exclude(HR, "장기 휴직으로 평가 불가", NOW)
+
+    assert evaluation.status == EvaluationStatus.EXCLUDED
+    assert evaluation.score == Decimal("85")  # not turned into a zero score
+    with pytest.raises(EvaluationStateError):
+        evaluation.revise(HEAD, Decimal("90"), None, NOW)
+
+    evaluation.cancel_exclusion(HR, restorable_status([history]), "", NOW)
+    assert evaluation.status == before
+
+
+def test_exclusion_requires_reason() -> None:
+    with pytest.raises(InvalidEvaluationError):
+        make_draft().exclude(HR, "", NOW)
+
+
+def test_target_cannot_handle_own_evaluation_as_hr() -> None:
+    evaluation = submitted()
+    with pytest.raises(EvaluationPermissionError):
+        evaluation.return_for_revision(MEMBER, "사유", NOW)
+    with pytest.raises(EvaluationPermissionError):
+        evaluation.exclude(MEMBER, "사유", NOW)
+
+
+def test_restorable_status_uses_latest_exclusion() -> None:
+    def entry(action: EvaluationAction, from_status: EvaluationStatus) -> EvaluationHistory:
+        return EvaluationHistory(None, 1, action, from_status, EvaluationStatus.EXCLUDED, HR, NOW)
+
+    histories = [
+        entry(EvaluationAction.EXCLUDE, EvaluationStatus.DRAFT),
+        entry(EvaluationAction.CANCEL_EXCLUSION, EvaluationStatus.EXCLUDED),
+        entry(EvaluationAction.EXCLUDE, EvaluationStatus.SUBMITTED),
+    ]
+    assert restorable_status(histories) == EvaluationStatus.SUBMITTED
+    with pytest.raises(EvaluationStateError):
+        restorable_status([])
+
+
+# Visibility ------------------------------------------------------------------------
+
+
+def test_visibility_follows_current_evaluator_and_confirmation() -> None:
     evaluation = make_draft()
     assert not evaluation.is_visible_to(MEMBER, viewer_is_hr_manager=False)
     assert evaluation.is_visible_to(HEAD, viewer_is_hr_manager=False)
-    assert evaluation.is_visible_to(9001, viewer_is_hr_manager=True)
-    assert not evaluation.is_visible_to(3001, viewer_is_hr_manager=False)
+    assert evaluation.is_visible_to(HR, viewer_is_hr_manager=True)
 
-    evaluation.confirm(9001, NOW)
+    evaluation.reassign(HR, NEW_EVALUATOR, "부서장 교체", NOW)
+    assert not evaluation.is_visible_to(HEAD, viewer_is_hr_manager=False)
+    assert evaluation.is_visible_to(NEW_EVALUATOR, viewer_is_hr_manager=False)
+
+    evaluation.submit(NEW_EVALUATOR, NOW)
+    evaluation.confirm(HR, {HEAD, NEW_EVALUATOR}, NOW)
     assert evaluation.is_visible_to(MEMBER, viewer_is_hr_manager=False)
+    assert not evaluation.can_view_history(MEMBER, viewer_is_hr_manager=False)
 
+
+# Architecture ----------------------------------------------------------------------
 
 EVALUATION_ROOT = Path(__file__).parents[1] / "evaluation"
 

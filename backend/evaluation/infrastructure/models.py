@@ -6,7 +6,10 @@ from workforce.infrastructure.models import Department, Employee, Position
 class EvaluationModel(models.Model):
     class Status(models.TextChoices):
         DRAFT = "작성중", "작성중"
+        SUBMITTED = "제출", "제출"
+        RETURNED = "반려", "반려"
         CONFIRMED = "확정", "확정"
+        EXCLUDED = "제외", "제외"
 
     eval_id = models.BigAutoField(primary_key=True)
     employee = models.ForeignKey(
@@ -32,11 +35,21 @@ class EvaluationModel(models.Model):
         null=True,
         blank=True,
     )
+    # Current evaluator. Changes only through an HR reassignment.
     evaluator = models.ForeignKey(
         Employee,
         db_column="evaluator_no",
         on_delete=models.RESTRICT,
         related_name="authored_evaluations",
+    )
+    # First author. Nullable because rows created before this column existed have none.
+    created_by = models.ForeignKey(
+        Employee,
+        db_column="created_by",
+        on_delete=models.RESTRICT,
+        related_name="created_evaluations",
+        null=True,
+        blank=True,
     )
     score = models.DecimalField(max_digits=5, decimal_places=2)
     grade = models.CharField(max_length=10)
@@ -56,3 +69,51 @@ class EvaluationModel(models.Model):
     class Meta:
         db_table = "evaluations"
         ordering = ["-eval_year", "-eval_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "eval_year"],
+                name="uq_evaluations_emp_no_eval_year",
+            ),
+        ]
+
+
+class EvaluationHistoryModel(models.Model):
+    history_id = models.BigAutoField(primary_key=True)
+    evaluation = models.ForeignKey(
+        EvaluationModel,
+        db_column="eval_id",
+        on_delete=models.RESTRICT,
+        related_name="history_entries",
+    )
+    action = models.CharField(max_length=20)
+    from_status = models.CharField(max_length=20, null=True, blank=True)
+    to_status = models.CharField(max_length=20)
+    actor = models.ForeignKey(
+        Employee,
+        db_column="actor_emp_no",
+        on_delete=models.RESTRICT,
+        related_name="evaluation_actions",
+    )
+    from_evaluator = models.ForeignKey(
+        Employee,
+        db_column="from_evaluator_no",
+        on_delete=models.RESTRICT,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    to_evaluator = models.ForeignKey(
+        Employee,
+        db_column="to_evaluator_no",
+        on_delete=models.RESTRICT,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    reason = models.CharField(max_length=255, blank=True, default="")
+    changed_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "evaluation_history"
+        ordering = ["changed_at", "history_id"]

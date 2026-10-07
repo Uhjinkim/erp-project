@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
-from evaluation.domain.exceptions import InvalidEvaluationError
+from evaluation.domain.exceptions import EvaluationYearNotAllowedError, InvalidEvaluationError
 
 MIN_SCORE = Decimal("0")
 MAX_SCORE = Decimal("100")
 SCORE_DECIMAL_PLACES = 2
+REASON_MAX_LENGTH = 255
 
 
 class Grade(StrEnum):
@@ -60,3 +61,27 @@ class EvaluationYear:
     def __post_init__(self) -> None:
         if len(self.value) != 4 or not self.value.isascii() or not self.value.isdigit():
             raise InvalidEvaluationError("평가 연도는 YYYY 형식의 4자리 숫자여야 합니다.")
+
+
+def ensure_creatable_year(eval_year: str, current_year: int) -> None:
+    """New evaluations may only target the current or the previous year.
+
+    Existing unfinished evaluations stay editable after the year changes, so this
+    check applies to creation only.
+    """
+    EvaluationYear(eval_year)
+    if int(eval_year) not in (current_year, current_year - 1):
+        raise EvaluationYearNotAllowedError(
+            f"평가는 {current_year - 1}년 또는 {current_year}년에 대해서만 생성할 수 있습니다."
+        )
+
+
+@dataclass(frozen=True)
+class Reason:
+    value: str
+
+    def __post_init__(self) -> None:
+        if not self.value.strip():
+            raise InvalidEvaluationError("사유를 입력해야 합니다.")
+        if len(self.value) > REASON_MAX_LENGTH:
+            raise InvalidEvaluationError(f"사유는 {REASON_MAX_LENGTH}자를 초과할 수 없습니다.")

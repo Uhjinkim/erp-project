@@ -1,15 +1,11 @@
 from django.contrib import admin
 from django.http import HttpRequest
 
-from evaluation.infrastructure.models import EvaluationModel
+from evaluation.infrastructure.models import EvaluationHistoryModel, EvaluationModel
 
 
-@admin.register(EvaluationModel)
-class EvaluationAdmin(admin.ModelAdmin):
-    """Read-only: writes must go through the API so grade and state rules hold."""
-
-    list_display = ("eval_id", "employee", "eval_year", "score", "grade", "eval_status")
-    list_filter = ("eval_year", "eval_status", "grade")
+class ReadOnlyAdmin(admin.ModelAdmin):
+    """Writes must go through the API so grade, state and history rules hold."""
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
@@ -19,3 +15,23 @@ class EvaluationAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
         return False
+
+
+@admin.register(EvaluationModel)
+class EvaluationAdmin(ReadOnlyAdmin):
+    list_display = (
+        "eval_id",
+        "employee",
+        "eval_year",
+        "evaluator",
+        "score",
+        "grade",
+        "eval_status",
+    )
+    list_filter = ("eval_year", "eval_status", "grade")
+
+
+@admin.register(EvaluationHistoryModel)
+class EvaluationHistoryAdmin(ReadOnlyAdmin):
+    list_display = ("history_id", "evaluation", "action", "from_status", "to_status", "actor")
+    list_filter = ("action",)
