@@ -26,12 +26,12 @@ type Notice = { text: string; tone: "info" | "error" }
 type StatusFilter = "all" | "작성중" | "확정" | "미작성"
 
 const NO_DEPARTMENT = "__none__"
-// Payslip display order (reference payslip: 기본급·상여·수당 / 국민연금·건강보험·고용보험·소득세).
+// Display order for payslips and input forms (급여 담당자 지정: 기본급·고정수당·초과근무수당·상여).
 const DISPLAY_ORDER = [
   "BASE_PAY",
-  "BONUS",
   "FIXED_ALLOWANCE",
   "OVERTIME_ALLOWANCE",
+  "BONUS",
   "NATIONAL_PENSION",
   "HEALTH_INSURANCE",
   "EMPLOYMENT_INSURANCE",
@@ -114,21 +114,16 @@ type PayslipTableProps = {
 }
 
 function PayslipTable({ statement, components }: PayslipTableProps) {
-  // Every active component is listed, like a printed payslip; items whose component was
-  // later deactivated are appended so no recorded amount is hidden.
-  const amountByCode = new Map(statement.items.map((item) => [item.component_code, item.amount]))
-  const knownCodes = new Set(components.map((component) => component.code))
-  const lines = [
-    ...sortComponents(components).map((component) => ({
-      code: component.code,
-      name: component.name,
-      category: component.category,
-      amount: amountByCode.get(component.code),
-    })),
-    ...statement.items
-      .filter((item) => !knownCodes.has(item.component_code))
-      .map((item) => ({ code: item.component_code, name: item.component_code, category: item.category, amount: item.amount })),
-  ]
+  // Only items with a nonzero amount are listed; empty or zero components are omitted entirely.
+  const nameByCode = new Map(components.map((component) => [component.code, component.name]))
+  const lines = statement.items
+    .filter((item) => Math.trunc(item.amount) !== 0)
+    .sort((left, right) => displayRank(left.component_code) - displayRank(right.component_code))
+    .map((item) => ({
+      name: nameByCode.get(item.component_code) ?? item.component_code,
+      category: item.category,
+      amount: item.amount,
+    }))
   const earnings = lines.filter((line) => line.category === "지급")
   const deductions = lines.filter((line) => line.category === "공제")
   const rowCount = Math.max(earnings.length, deductions.length, 1)
@@ -150,9 +145,9 @@ function PayslipTable({ statement, components }: PayslipTableProps) {
           return (
             <tr key={index}>
               <td>{earning?.name ?? ""}</td>
-              <td>{earning?.amount !== undefined ? won(earning.amount) : ""}</td>
+              <td>{earning ? won(earning.amount) : ""}</td>
               <td>{deduction?.name ?? ""}</td>
-              <td>{deduction?.amount !== undefined ? won(deduction.amount) : ""}</td>
+              <td>{deduction ? won(deduction.amount) : ""}</td>
             </tr>
           )
         })}
@@ -669,10 +664,15 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
                     const changedAt = new Date(entry.changed_at)
                     return (
                       <li key={entry.history_id}>
-                        <strong>{entry.action}</strong> ·{" "}
-                        {detailed ? changedAt.toLocaleString("ko-KR") : changedAt.toLocaleDateString("ko-KR")}
-                        {detailed && <> · 처리자 {entry.actor_name ?? "알 수 없음"}</>}
-                        {detailed && entry.reason && <span> · {entry.reason}</span>}
+                        <div className="payroll-history-head">
+                          <strong>{entry.action}</strong>
+                          <span>
+                            {" / "}
+                            {detailed ? changedAt.toLocaleString("ko-KR") : changedAt.toLocaleDateString("ko-KR")}
+                          </span>
+                          {detailed && <span> / {entry.actor_name ?? "알 수 없음"}</span>}
+                        </div>
+                        {detailed && entry.reason && <p className="payroll-history-detail">{entry.reason}</p>}
                       </li>
                     )
                   })}
