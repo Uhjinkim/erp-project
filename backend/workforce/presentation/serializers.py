@@ -233,13 +233,18 @@ class ChangeRequestSerializer(serializers.Serializer):
     emp_no = serializers.IntegerField(source="employee_no")
     status = serializers.CharField()
     previous = ApprovalRequiredValuesSerializer()
-    requested = ApprovalRequiredValuesSerializer()
+    requested = serializers.SerializerMethodField()
     changed_fields = serializers.SerializerMethodField()
     requested_at = serializers.DateTimeField()
     processed_by = serializers.IntegerField(allow_null=True)
     processed_at = serializers.DateTimeField(allow_null=True)
     reject_reason = serializers.CharField(allow_null=True)
     can_process = serializers.SerializerMethodField()
+
+    def get_requested(self, request: object) -> dict[str, object]:
+        # 계좌번호 원문은 대기 요청을 처리할 수 있는 사용자에게만 보여 준다.
+        values = request.requested if self.get_can_process(request) else request.requested.masked()
+        return ApprovalRequiredValuesSerializer(values).data
 
     def get_changed_fields(self, request: object) -> list[str]:
         return request.requested.changed_fields()

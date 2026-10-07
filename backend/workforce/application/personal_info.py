@@ -74,7 +74,7 @@ class PersonalInfoService:
                 PersonalInfoChangeRequest(
                     request_id=None,
                     employee_no=employee_no,
-                    previous=current,
+                    previous=current.masked(),
                     requested=requested,
                     status=ChangeRequestStatus.PENDING,
                     requested_at=self.clock(),
@@ -85,11 +85,14 @@ class PersonalInfoService:
         """FN-HR-004: 승인 시 요청값을 실제 인사정보에 반영한다."""
         with self.repository.transaction():
             request = self._get_for_processing(request_id, actor)
-            request.approve(actor.employee_no, self.clock())
+            values = request.approve(actor.employee_no, self.clock())
             # HR-004: 요청 후 퇴사·휴직한 사원의 값은 반영하지 않는다(반려로 처리).
             self._ensure_active(request.employee_no)
-            self._ensure_email_available(request.requested.email, request.employee_no)
-            self.repository.apply_values(request.employee_no, request.requested)
+            self._ensure_email_available(values.email, request.employee_no)
+            self.repository.apply_values(request.employee_no, values)
+            if values.email is not None:
+                # 로그인 ID는 사내 이메일을 따른다: 승인된 이메일로 바로 로그인할 수 있게 한다.
+                self.repository.update_login_email(request.employee_no, values.email)
             self.repository.save_request(request)
             return request
 

@@ -35,9 +35,16 @@ class DjangoPersonalInfoRepository:
         )
 
     def email_in_use(self, email: str, *, exclude_employee_no: int) -> bool:
+        from accounts.models import User
+
+        # 사내 이메일은 로그인 ID로도 쓰이므로 다른 사원 이메일과 다른 계정 로그인 이메일을
+        # 모두 검사한다.
         return (
             Employee.objects.filter(email__iexact=email)
             .exclude(employee_no=exclude_employee_no)
+            .exists()
+            or User.objects.filter(email__iexact=email)
+            .exclude(employee_id=exclude_employee_no)
             .exists()
         )
 
@@ -56,6 +63,11 @@ class DjangoPersonalInfoRepository:
         for name, value in changes.items():
             setattr(employee, name, value)
         employee.save(update_fields=list(changes))
+
+    def update_login_email(self, employee_no: int, email: str) -> None:
+        from accounts.models import User
+
+        User.objects.filter(employee_id=employee_no).update(email=email)
 
     def add_request(self, request: PersonalInfoChangeRequest) -> PersonalInfoChangeRequest:
         model = PersonalInfoChangeRequestModel(employee_id=request.employee_no)

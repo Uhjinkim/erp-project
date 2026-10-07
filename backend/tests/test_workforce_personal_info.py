@@ -14,6 +14,7 @@ from workforce.domain.personal_info import (
     ChangeRequestStatus,
     PersonalInfoChangeRequest,
     ProcessorAssignment,
+    mask_account_no,
     resolve_change_request_processor,
     validate_change_request_values,
     validate_self_editable_fields,
@@ -204,7 +205,7 @@ def test_fn_hr_003_to_004_request_is_applied_only_after_approval(
     assert body["previous"] == {
         "email": "user1001@example.com",
         "bank_code": "004",
-        "account_no": "111-111",
+        "account_no": "**1111",
     }
     assert body["requested"]["email"] == "new@example.com"
     staff.employee.refresh_from_db()
@@ -514,3 +515,140 @@ def test_processable_list_resolves_processor_once_per_requester(manager: User) -
 
     # 요청자당 처리자 판정은 1회(역할 조회 1건)로 끝나고, 같은 판정을 두 번 하지 않는다.
     assert many - few <= 8
+
+
+def login_status(email: str) -> int:
+    return (
+        APIClient()
+        .post(
+            "/api/auth/login/",
+            {"email": email, "password": "safe-test-password"},
+            format="json",
+        )
+        .status_code
+    )
+
+
+@pytest.mark.django_db
+def test_hr_003_approved_email_becomes_login_email(staff: User, manager: User) -> None:
+    created = client_for(staff).post(
+        "/api/workforce/personal-info-requests/", {"email": "New@Example.com"}, format="json"
+    ).json()
+    assert login_status("user1001@example.com") == 200
+
+    client_for(manager).post(
+        f"/api/workforce/personal-info-requests/{created['request_id']}/approve/"
+    )
+
+    staff.refresh_from_db()
+    assert staff.email == "new@example.com"
+    assert login_status("new@example.com") == 200
+    assert login_status("user1001@example.com") == 400
+
+
+@pytest.mark.django_db
+def test_hr_003_rejected_email_keeps_login_email(staff: User, manager: User) -> None:
+    created = client_for(staff).post(
+        "/api/workforce/personal-info-requests/", {"email": "new@example.com"}, format="json"
+    ).json()
+
+    client_for(manager).post(
+        f"/api/workforce/personal-info-requests/{created['request_id']}/reject/"
+    )
+
+    staff.refresh_from_db()
+    assert staff.email == "user1001@example.com"
+    assert login_status("new@example.com") == 400
+
+
+@pytest.mark.django_db
+def test_fn_hr_003_rejects_email_used_by_another_login_account(staff: User) -> None:
+    User.objects.create_user(email="admin-only@example.com", password="safe-test-password")
+
+    response = client_for(staff).post(
+        "/api/workforce/personal-info-requests/",
+        {"email": "Admin-Only@example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "email"
+
+
+# --- 계좌번호 최소 보관: 뒤 4자리만 남기고 가린다 ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "masked"),
+    [
+        ("123-456-7890", "******7890"),
+        ("1234567890", "******7890"),
+        ("1234", "****"),
+        ("12", "**"),
+        (None, None),
+    ],
+)
+def test_mask_account_no(raw: str | None, masked: str | None) -> None:
+    assert mask_account_no(raw) == masked
+
+
+def test_processed_request_keeps_only_masked_account() -> None:
+    request = PersonalInfoChangeRequest(
+        request_id=1,
+        employee_no=1001,
+        previous=CURRENT.masked(),
+        requested=ApprovalRequiredValues(bank_code="088", account_no="222-333-4444"),
+        status=ChangeRequestStatus.PENDING,
+        requested_at=NOW,
+    )
+
+    applied = request.approve(9001, NOW)
+
+    assert applied.account_no == "222-333-4444"
+    assert request.requested.account_no == "******4444"
+    assert request.previous.account_no == "***"
+
+
+def stored_request(request_id: int) -> PersonalInfoChangeRequestModel:
+    return PersonalInfoChangeRequestModel.objects.get(request_id=request_id)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ["approve", "reject", "cancel"])
+def test_stored_history_has_no_raw_account_after_processing(
+    staff: User, manager: User, action: str
+) -> None:
+    created = client_for(staff).post(
+        "/api/workforce/personal-info-requests/",
+        {"bank_code": "088", "account_no": "222-333-4444"},
+        format="json",
+    ).json()
+    pending = stored_request(created["request_id"])
+    assert pending.previous_account_no == "**1111"
+    assert pending.requested_account_no == "222-333-4444"
+
+    actor = staff if action == "cancel" else manager
+    client_for(actor).post(f"/api/workforce/personal-info-requests/{created['request_id']}/{action}/")
+
+    processed = stored_request(created["request_id"])
+    assert processed.requested_account_no == "******4444"
+    assert processed.previous_account_no == "**1111"
+    staff.employee.refresh_from_db()
+    expected = "222-333-4444" if action == "approve" else "111-111"
+    assert staff.employee.account_no == expected
+
+
+@pytest.mark.django_db
+def test_raw_requested_account_is_shown_only_to_pending_processor(
+    staff: User, manager: User
+) -> None:
+    created = client_for(staff).post(
+        "/api/workforce/personal-info-requests/",
+        {"bank_code": "088", "account_no": "222-333-4444"},
+        format="json",
+    ).json()
+    url = f"/api/workforce/personal-info-requests/{created['request_id']}/"
+
+    assert created["requested"]["account_no"] == "******4444"
+    assert client_for(staff).get(url).json()["requested"]["account_no"] == "******4444"
+    assert client_for(manager).get(url).json()["requested"]["account_no"] == "222-333-4444"

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from datetime import datetime
 from enum import StrEnum
 
@@ -31,6 +31,23 @@ class ApprovalRequiredValues:
 
     def changed_fields(self) -> list[str]:
         return [item.name for item in fields(self) if getattr(self, item.name) is not None]
+
+    def masked(self) -> "ApprovalRequiredValues":
+        """계좌번호를 뒤 4자리만 남기고 가린 사본."""
+        return replace(self, account_no=mask_account_no(self.account_no))
+
+
+def mask_account_no(value: str | None) -> str | None:
+    """급여계좌번호를 뒤 4자리만 남기고 가린다(예: ``123-456-7890`` → ``******7890``).
+
+    구분 기호는 제거해 계좌 형식도 드러내지 않는다. 4자리 이하이면 모두 가린다.
+    """
+    if value is None:
+        return None
+    characters = [character for character in value if character.isalnum()]
+    if len(characters) <= 4:
+        return "*" * len(characters)
+    return "*" * (len(characters) - 4) + "".join(characters[-4:])
 
 
 def validate_self_editable_fields(field_names: set[str]) -> None:
@@ -128,11 +145,18 @@ class PersonalInfoChangeRequest:
     processed_at: datetime | None = None
     reject_reason: str | None = None
 
-    def approve(self, actor_employee_no: int | None, processed_at: datetime) -> None:
-        """FN-HR-004: 인사관리자는 대기 요청만 승인한다."""
+    def approve(
+        self, actor_employee_no: int | None, processed_at: datetime
+    ) -> ApprovalRequiredValues:
+        """FN-HR-004: 대기 요청을 승인하고, 실제 인사정보에 반영할 원래 요청값을 돌려준다.
+
+        반환 후 요청 이력에는 가려진 계좌번호만 남는다.
+        """
         self._require_pending()
+        values_to_apply = self.requested
         self.status = ChangeRequestStatus.APPROVED
         self._record_processing(actor_employee_no, processed_at)
+        return values_to_apply
 
     def reject(
         self,
@@ -163,3 +187,5 @@ class PersonalInfoChangeRequest:
     def _record_processing(self, actor_employee_no: int | None, processed_at: datetime) -> None:
         self.processed_by = actor_employee_no
         self.processed_at = processed_at
+        # 처리가 끝난 요청은 계좌번호 원문이 더 필요 없으므로 이력에서 가린다.
+        self.requested = self.requested.masked()
