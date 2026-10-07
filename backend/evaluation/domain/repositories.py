@@ -14,9 +14,10 @@ class EvaluationRepository(ABC):
 
     @abstractmethod
     def save(self, evaluation: Evaluation, expected: Evaluation) -> Evaluation:
-        """Persist only if the stored row still matches `expected`.
+        """Persist only if the stored status and evaluator still match `expected`.
 
-        Raise EvaluationConflictError when someone else changed the evaluation first.
+        Raise EvaluationConflictError when someone else changed either first. Content
+        edits are last-write-wins.
         """
 
     @abstractmethod

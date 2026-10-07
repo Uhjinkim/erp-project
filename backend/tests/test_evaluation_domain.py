@@ -1,6 +1,6 @@
 import ast
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -29,6 +29,7 @@ from evaluation.domain.value_objects import (
     Grade,
     Reason,
     ensure_creatable_year,
+    evaluation_basis_date,
 )
 
 NOW = datetime(2026, 10, 6, tzinfo=UTC)
@@ -106,6 +107,12 @@ def test_new_evaluation_allows_current_and_previous_year(year: str) -> None:
 def test_new_evaluation_rejects_other_years(year: str) -> None:
     with pytest.raises(EvaluationYearNotAllowedError):
         ensure_creatable_year(year, 2026)
+
+
+def test_basis_date_is_year_end_for_past_years_and_today_for_current_year() -> None:
+    today = date(2026, 10, 7)
+    assert evaluation_basis_date("2025", today) == date(2025, 12, 31)
+    assert evaluation_basis_date("2026", today) == today
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "x" * 256])
@@ -409,6 +416,26 @@ def test_visibility_follows_current_evaluator_and_confirmation() -> None:
     evaluation.confirm(HR, {HEAD, NEW_EVALUATOR}, NOW)
     assert evaluation.is_visible_to(MEMBER, viewer_is_hr_manager=False)
     assert not evaluation.can_view_history(MEMBER, viewer_is_hr_manager=False)
+
+
+def test_ev005_hr_manager_target_sees_only_confirmed_own_evaluation() -> None:
+    hr_target = EvaluationTarget(HR, True, 10, "STAFF", HEAD)
+    evaluation = Evaluation.draft(
+        target=hr_target,
+        evaluator_no=HEAD,
+        eval_year="2026",
+        score=Decimal("80"),
+        comments="",
+        now=NOW,
+    )
+    evaluation.eval_id = 1
+    assert not evaluation.is_visible_to(HR, viewer_is_hr_manager=True)
+    assert not evaluation.can_view_history(HR, viewer_is_hr_manager=True)
+
+    evaluation.submit(HEAD, NOW)
+    evaluation.confirm(9002, {HEAD}, NOW)
+    assert evaluation.is_visible_to(HR, viewer_is_hr_manager=True)
+    assert not evaluation.can_view_history(HR, viewer_is_hr_manager=True)
 
 
 # Architecture ----------------------------------------------------------------------

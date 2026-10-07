@@ -15,6 +15,7 @@ from evaluation.domain.entities import (
     EvaluationHistory,
     creation_history,
     ensure_can_evaluate,
+    ensure_not_hr_manager_evaluator,
     restorable_status,
 )
 from evaluation.domain.exceptions import (
@@ -24,7 +25,11 @@ from evaluation.domain.exceptions import (
     InactiveEmployeeError,
 )
 from evaluation.domain.repositories import EvaluationUnitOfWork
-from evaluation.domain.value_objects import EvaluationYear, ensure_creatable_year
+from evaluation.domain.value_objects import (
+    EvaluationYear,
+    ensure_creatable_year,
+    evaluation_basis_date,
+)
 
 
 class EvaluationService:
@@ -44,12 +49,16 @@ class EvaluationService:
 
     def create_evaluation(self, command: CreateEvaluationCommand) -> Evaluation:
         self._ensure_active(command.evaluator_no)
-        ensure_creatable_year(command.eval_year, self.today().year)
-        target = self.workforce.evaluation_target(command.employee_no)
+        today = self.today()
+        ensure_creatable_year(command.eval_year, today.year)
+        target = self.workforce.evaluation_target(
+            command.employee_no, evaluation_basis_date(command.eval_year, today)
+        )
         # Check authority before revealing anything about the target (HR-001).
         if target is None:
             raise EvaluationPermissionError(EVALUATOR_PERMISSION_MESSAGE)
         ensure_can_evaluate(command.evaluator_no, target)
+        ensure_not_hr_manager_evaluator(self.workforce.is_hr_manager(command.evaluator_no))
         if not target.is_employed:
             raise InactiveEmployeeError("퇴사한 사원은 새로 평가할 수 없습니다.")
 
@@ -94,15 +103,18 @@ class EvaluationService:
         )
 
     def reassign_evaluation(self, command: ReassignEvaluationCommand) -> Evaluation:
-        if not self.workforce.is_active_employee(command.new_evaluator_no):
-            raise InactiveEmployeeError("재직 중인 사원만 평가자로 지정할 수 있습니다.")
-        return self._hr_action(
-            command.eval_id,
-            command.actor_no,
-            lambda evaluation, _histories, now: evaluation.reassign(
+        def reassign(
+            evaluation: Evaluation, _histories: list[EvaluationHistory], now: datetime
+        ) -> EvaluationHistory:
+            # Checked only after the caller is known to be an HR manager.
+            if not self.workforce.is_active_employee(command.new_evaluator_no):
+                raise InactiveEmployeeError("재직 중인 사원만 평가자로 지정할 수 있습니다.")
+            ensure_not_hr_manager_evaluator(self.workforce.is_hr_manager(command.new_evaluator_no))
+            return evaluation.reassign(
                 command.actor_no, command.new_evaluator_no, command.reason, now
-            ),
-        )
+            )
+
+        return self._hr_action(command.eval_id, command.actor_no, reassign)
 
     def confirm_evaluation(self, eval_id: int, actor_no: int) -> Evaluation:
         def confirm(
@@ -159,10 +171,14 @@ class EvaluationService:
         self._ensure_active(viewer_no)
         if eval_year is not None:
             EvaluationYear(eval_year)
+        is_hr = self.workforce.is_hr_manager(viewer_no)
         with self.unit_of_work_factory() as uow:
-            if self.workforce.is_hr_manager(viewer_no):
-                return uow.evaluations.list_all(eval_year)
-            return uow.evaluations.list_visible_to(viewer_no, eval_year)
+            if is_hr:
+                evaluations = uow.evaluations.list_all(eval_year)
+            else:
+                evaluations = uow.evaluations.list_visible_to(viewer_no, eval_year)
+        # Same rule as the detail view, e.g. an HR manager's own draft stays hidden (EV-005).
+        return [item for item in evaluations if item.is_visible_to(viewer_no, is_hr)]
 
     # Helpers -------------------------------------------------------------------------
 
@@ -177,6 +193,8 @@ class EvaluationService:
         is_hr = self.workforce.is_hr_manager(actor_no)
         with self.unit_of_work_factory() as uow:
             evaluation = self._get_visible(uow, eval_id, actor_no, is_hr)
+            # An evaluator who later received the HR manager role must be reassigned first.
+            ensure_not_hr_manager_evaluator(is_hr)
             expected = replace(evaluation)
             history = apply(evaluation, self.clock())
             return self._save(uow, evaluation, expected, history)

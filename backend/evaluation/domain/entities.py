@@ -7,6 +7,7 @@ from evaluation.domain.exceptions import (
     ConfirmationNotAllowedError,
     EvaluationPermissionError,
     EvaluationStateError,
+    HRManagerEvaluatorError,
     InvalidEvaluationError,
     SelfEvaluationError,
 )
@@ -48,7 +49,11 @@ CONTENT_ACTIONS = frozenset(
 
 @dataclass(frozen=True)
 class EvaluationTarget:
-    """Workforce facts about the evaluated employee at the time of the request."""
+    """Workforce facts about the evaluated employee.
+
+    Department and position are those on the evaluation basis date (연말 기준); the
+    department heads are the current heads of those departments.
+    """
 
     employee_no: int
     is_employed: bool
@@ -70,6 +75,17 @@ class EvaluationTarget:
 
 
 EVALUATOR_PERMISSION_MESSAGE = "해당 사원을 평가할 권한이 없습니다."
+
+
+def ensure_not_hr_manager_evaluator(is_hr_manager: bool) -> None:
+    """FN-EV-001: department heads write evaluations; HR managers never act as evaluators.
+
+    Keeps writing (평가자) and HR handling (재배정·반려·확정) in different hands.
+    """
+    if is_hr_manager:
+        raise HRManagerEvaluatorError(
+            "인사관리자는 평가자가 될 수 없습니다. 인사관리자가 아닌 평가자로 재배정해야 합니다."
+        )
 
 
 def ensure_can_evaluate(evaluator_no: int, target: EvaluationTarget) -> None:
@@ -283,13 +299,18 @@ class Evaluation:
     def is_visible_to(self, viewer_no: int, viewer_is_hr_manager: bool) -> bool:
         """Unconfirmed work is for the current evaluator and HR; the target sees it once confirmed.
 
-        A reassigned former evaluator loses access because only the current evaluator counts.
+        EV-005: the evaluated employee only ever sees their own confirmed evaluation, even when
+        they are an HR manager. A reassigned former evaluator loses access because only the
+        current evaluator counts.
         """
-        if viewer_is_hr_manager or viewer_no == self.evaluator_no:
-            return True
-        return viewer_no == self.employee_no and self.status == EvaluationStatus.CONFIRMED
+        if viewer_no == self.employee_no:
+            return self.status == EvaluationStatus.CONFIRMED
+        return viewer_is_hr_manager or viewer_no == self.evaluator_no
 
     def can_view_history(self, viewer_no: int, viewer_is_hr_manager: bool) -> bool:
+        # History carries internal return/exclusion reasons, so never for the target (EV-005).
+        if viewer_no == self.employee_no:
+            return False
         return viewer_is_hr_manager or viewer_no == self.evaluator_no
 
     # Helpers -----------------------------------------------------------------------

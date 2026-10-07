@@ -12,6 +12,7 @@ from workforce.infrastructure.models import (
     Department,
     Employee,
     EmployeeRole,
+    EmploymentHistory,
     Person,
     Position,
     Role,
@@ -140,6 +141,65 @@ def test_employee_on_leave_can_be_evaluated(org) -> None:
     )
     response = create_evaluation(client_for(org["head"]), emp_no=1003)
     assert response.status_code == 201, response.data
+
+
+@pytest.mark.django_db
+def test_previous_year_uses_year_end_department(org) -> None:
+    """A member who moved on 1 January is evaluated for last year by the former department."""
+    year = int(current_year())
+    sales = Department.objects.create(dept_no=20, dept_name="영업팀")
+    sales_head = create_employee(2020, "sales@example.com", department=sales)
+    sales.head = sales_head
+    sales.save(update_fields=["head"])
+    member = org["member"]
+    member.department = sales
+    member.save(update_fields=["department"])
+    position = member.position
+    EmploymentHistory.objects.create(
+        employee=member,
+        start_date=date(year - 1, 1, 1),
+        end_date=date(year - 1, 12, 31),
+        department=org["head"].department,
+        position=position,
+    )
+    EmploymentHistory.objects.create(
+        employee=member, start_date=date(year, 1, 1), department=sales, position=position
+    )
+
+    former_head = client_for(org["head"])
+    new_head = client_for(sales_head)
+    last_year = str(year - 1)
+
+    assert create_evaluation(new_head, year=last_year).status_code == 403
+    response = create_evaluation(former_head, year=last_year)
+    assert response.status_code == 201, response.data
+    assert response.data["snapshot_dept_no"] == 10
+
+    this_year = create_evaluation(new_head)
+    assert this_year.status_code == 201, this_year.data
+    assert this_year.data["snapshot_dept_no"] == 20
+
+
+@pytest.mark.django_db
+def test_hr_manager_cannot_see_own_unconfirmed_evaluation(org) -> None:
+    department = org["member"].department
+    org["hr"].department = department
+    org["hr"].save(update_fields=["department"])
+    hr = client_for(org["hr"])
+    hr_2 = create_employee(9002, "hr2@example.com")
+    make_hr_manager(hr_2)
+
+    head = client_for(org["head"])
+    eval_id = create_evaluation(head, emp_no=9001).data["eval_id"]
+    head.post(f"/api/evaluations/{eval_id}/submit/")
+
+    assert hr.get(f"/api/evaluations/{eval_id}/").status_code == 404
+    assert hr.get(f"/api/evaluations/{eval_id}/history/").status_code == 404
+    assert eval_id not in [item["eval_id"] for item in hr.get("/api/evaluations/").data]
+
+    client_for(hr_2).post(f"/api/evaluations/{eval_id}/confirm/")
+    assert hr.get(f"/api/evaluations/{eval_id}/").status_code == 200
+    assert hr.get(f"/api/evaluations/{eval_id}/history/").status_code == 403
 
 
 @pytest.mark.django_db
@@ -290,26 +350,51 @@ def test_reassignment_moves_access_to_new_evaluator(org) -> None:
 
 
 @pytest.mark.django_db
-def test_hr_manager_who_wrote_content_cannot_confirm(org) -> None:
-    department = org["member"].department
-    department.head = org["hr"]
-    department.save(update_fields=["head"])
+def test_former_evaluator_who_became_hr_manager_cannot_confirm(org) -> None:
+    head = client_for(org["head"])
     hr = client_for(org["hr"])
-    hr_2 = create_employee(9002, "hr2@example.com")
-    make_hr_manager(hr_2)
+    eval_id = create_evaluation(head).data["eval_id"]
+    make_hr_manager(org["head"])
 
-    eval_id = create_evaluation(hr).data["eval_id"]
-    client_for(hr_2).post(
+    hr.post(
         f"/api/evaluations/{eval_id}/reassign/",
-        {"evaluator_no": 2002, "reason": "평가자 분리"},
+        {"evaluator_no": 2002, "reason": "역할 변경"},
         format="json",
     )
     client_for(org["new_head"]).post(f"/api/evaluations/{eval_id}/submit/")
 
-    blocked = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    blocked = head.post(f"/api/evaluations/{eval_id}/confirm/")
     assert blocked.status_code == 403
     assert blocked.data["code"] == "confirmation_not_allowed"
-    assert client_for(hr_2).post(f"/api/evaluations/{eval_id}/confirm/").status_code == 200
+    assert hr.post(f"/api/evaluations/{eval_id}/confirm/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_fn_ev_001_hr_manager_is_never_an_evaluator(org) -> None:
+    hr = client_for(org["hr"])
+    hr_2 = create_employee(9002, "hr2@example.com")
+    make_hr_manager(hr_2)
+
+    # An HR manager who heads the department cannot write the evaluation.
+    department = org["member"].department
+    department.head = org["hr"]
+    department.save(update_fields=["head"])
+    blocked = create_evaluation(hr)
+    assert blocked.status_code == 403
+    assert blocked.data["code"] == "hr_manager_cannot_evaluate"
+
+    department.head = org["head"]
+    department.save(update_fields=["head"])
+    eval_id = create_evaluation(client_for(org["head"])).data["eval_id"]
+    for evaluator_no in (9001, 9002):
+        response = hr.post(
+            f"/api/evaluations/{eval_id}/reassign/",
+            {"evaluator_no": evaluator_no, "reason": "사유"},
+            format="json",
+        )
+        assert response.status_code == 403
+        assert response.data["code"] == "hr_manager_cannot_evaluate"
+    assert EvaluationModel.objects.get(eval_id=eval_id).evaluator_id == 2001
 
 
 @pytest.mark.django_db

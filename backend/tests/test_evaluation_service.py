@@ -26,6 +26,7 @@ from evaluation.domain.exceptions import (
     EvaluationPermissionError,
     EvaluationStateError,
     EvaluationYearNotAllowedError,
+    HRManagerEvaluatorError,
     InactiveEmployeeError,
     SelfEvaluationError,
 )
@@ -69,11 +70,7 @@ class FakeEvaluations(EvaluationRepository):
     def save(self, evaluation: Evaluation, expected: Evaluation) -> Evaluation:
         assert evaluation.eval_id is not None
         stored = self.items[evaluation.eval_id]
-        if (stored.status, stored.evaluator_no, stored.updated_at) != (
-            expected.status,
-            expected.evaluator_no,
-            expected.updated_at,
-        ):
+        if (stored.status, stored.evaluator_no) != (expected.status, expected.evaluator_no):
             raise EvaluationConflictError("다른 사용자가 먼저 평가를 변경했습니다.")
         self.items[evaluation.eval_id] = replace(evaluation)
         return replace(evaluation)
@@ -127,6 +124,7 @@ class FakeWorkforce(WorkforceGateway):
     def __init__(self) -> None:
         self.inactive: set[int] = {RETIRED, ON_LEAVE}
         self.hr_managers: set[int] = {HR, HR_2}
+        self.requested_dates: list[date] = []
         self.targets: dict[int, EvaluationTarget] = {
             MEMBER: EvaluationTarget(MEMBER, True, 10, "STAFF", HEAD),
             ON_LEAVE: EvaluationTarget(ON_LEAVE, True, 10, "STAFF", HEAD),
@@ -140,7 +138,8 @@ class FakeWorkforce(WorkforceGateway):
     def is_hr_manager(self, employee_no: int) -> bool:
         return employee_no in self.hr_managers
 
-    def evaluation_target(self, employee_no: int) -> EvaluationTarget | None:
+    def evaluation_target(self, employee_no: int, as_of: date) -> EvaluationTarget | None:
+        self.requested_dates.append(as_of)
         return self.targets.get(employee_no)
 
 
@@ -275,6 +274,17 @@ def test_one_evaluation_per_employee_and_year(service: EvaluationService) -> Non
     assert create(service, year="2025").eval_year == "2025"
 
 
+@pytest.mark.parametrize(
+    ("year", "expected"),
+    [("2025", date(2025, 12, 31)), ("2026", TODAY)],
+)
+def test_target_is_resolved_on_year_end_basis_date(
+    service: EvaluationService, workforce: FakeWorkforce, year: str, expected: date
+) -> None:
+    create(service, year=year)
+    assert workforce.requested_dates == [expected]
+
+
 # Evaluator workflow ----------------------------------------------------------------
 
 
@@ -388,19 +398,62 @@ def test_ev004_hr_confirms_submitted_evaluation(service: EvaluationService) -> N
     assert confirmed.confirmed_by == HR
 
 
-def test_hr_manager_who_wrote_content_cannot_confirm(
+def test_former_evaluator_who_became_hr_manager_cannot_confirm(
     service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
-    # HR acts as department head, writes the draft, then the evaluation is reassigned.
-    workforce.targets[MEMBER] = EvaluationTarget(MEMBER, True, 10, "STAFF", HR)
-    eval_id = create(service, evaluator=HR).eval_id or 0
-    service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR_2, NEW_HEAD, "부서장 교체"))
+    # HEAD writes the draft, later receives the HR manager role and is replaced.
+    eval_id = create(service).eval_id or 0
+    workforce.hr_managers.add(HEAD)
+    service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR_2, NEW_HEAD, "역할 변경"))
     service.submit_evaluation(eval_id, NEW_HEAD)
 
     with pytest.raises(ConfirmationNotAllowedError):
-        service.confirm_evaluation(eval_id, HR)
+        service.confirm_evaluation(eval_id, HEAD)
     # Another HR manager can still confirm, so the evaluation is not stuck.
     assert service.confirm_evaluation(eval_id, HR_2).status == EvaluationStatus.CONFIRMED
+
+
+def test_fn_ev_001_hr_manager_department_head_cannot_write(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    workforce.targets[MEMBER] = EvaluationTarget(MEMBER, True, 10, "STAFF", HR)
+    with pytest.raises(HRManagerEvaluatorError):
+        create(service, evaluator=HR)
+
+
+@pytest.mark.parametrize("new_evaluator", [HR, HR_2])
+def test_fn_ev_001_hr_manager_cannot_be_assigned_as_evaluator(
+    service: EvaluationService, uow: FakeUnitOfWork, new_evaluator: int
+) -> None:
+    eval_id = create(service).eval_id or 0
+    with pytest.raises(HRManagerEvaluatorError):
+        service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, new_evaluator, "사유"))
+    assert uow.evaluations.get(eval_id).evaluator_no == HEAD
+
+
+def test_evaluator_who_became_hr_manager_must_be_reassigned(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    eval_id = create(service).eval_id or 0
+    workforce.hr_managers.add(HEAD)
+
+    with pytest.raises(HRManagerEvaluatorError):
+        service.revise_evaluation(ReviseEvaluationCommand(eval_id, HEAD, Decimal("70")))
+    with pytest.raises(HRManagerEvaluatorError):
+        service.submit_evaluation(eval_id, HEAD)
+
+    service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, NEW_HEAD, "역할 변경"))
+    service.revise_evaluation(ReviseEvaluationCommand(eval_id, NEW_HEAD, Decimal("70")))
+
+
+def test_non_hr_caller_learns_nothing_from_reassign(service: EvaluationService) -> None:
+    eval_id = create(service).eval_id or 0
+    for new_evaluator in (RETIRED, HR_2, NEW_HEAD):
+        with pytest.raises(EvaluationPermissionError) as error:
+            service.reassign_evaluation(
+                ReassignEvaluationCommand(eval_id, OTHER, new_evaluator, "사유")
+            )
+        assert error.value.code == "permission_denied"
 
 
 def test_hr_manager_cannot_confirm_own_evaluation(
@@ -515,6 +568,40 @@ def test_history_is_for_hr_and_current_evaluator_only(service: EvaluationService
         service.list_history(eval_id, MEMBER)
     with pytest.raises(EvaluationNotFoundError):
         service.list_history(eval_id, OTHER)
+
+
+def test_hr_manager_cannot_see_own_unconfirmed_evaluation(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    """EV-005: being an HR manager does not widen access to one's own evaluation."""
+    workforce.targets[HR] = EvaluationTarget(HR, True, 10, "STAFF", HEAD)
+    eval_id = submitted(service, employee=HR)
+
+    with pytest.raises(EvaluationNotFoundError):
+        service.get_evaluation(eval_id, HR)
+    with pytest.raises(EvaluationNotFoundError):
+        service.list_history(eval_id, HR)
+    assert eval_id not in [item.eval_id for item in service.list_evaluations(HR)]
+    assert eval_id in [item.eval_id for item in service.list_evaluations(HR_2)]
+
+    service.confirm_evaluation(eval_id, HR_2)
+    assert service.get_evaluation(eval_id, HR).status == EvaluationStatus.CONFIRMED
+    assert eval_id in [item.eval_id for item in service.list_evaluations(HR)]
+    with pytest.raises(EvaluationPermissionError):
+        service.list_history(eval_id, HR)
+
+
+def test_concurrent_content_edits_keep_last_saved(
+    service: EvaluationService, uow: FakeUnitOfWork
+) -> None:
+    eval_id = create(service).eval_id or 0
+    first_load = uow.evaluations.get(eval_id)
+
+    service.revise_evaluation(ReviseEvaluationCommand(eval_id, HEAD, Decimal("70")))
+    # A save based on the older load still succeeds: same status and evaluator.
+    first_load.revise(HEAD, Decimal("95"), None, NOW)
+    uow.evaluations.save(first_load, uow.evaluations.get(eval_id))
+    assert uow.evaluations.get(eval_id).score == Decimal("95")
 
 
 def test_concurrent_change_is_reported_as_conflict(

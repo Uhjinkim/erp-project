@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
@@ -74,6 +75,16 @@ def ensure_creatable_year(eval_year: str, current_year: int) -> None:
         raise EvaluationYearNotAllowedError(
             f"평가는 {current_year - 1}년 또는 {current_year}년에 대해서만 생성할 수 있습니다."
         )
+
+
+def evaluation_basis_date(eval_year: str, today: date) -> date:
+    """The date whose department and position define the evaluation (연말 기준).
+
+    A past year uses its 31 December, so a January transfer does not hand last year's
+    evaluation to the new department. The current year has no year end yet, so it uses today.
+    """
+    EvaluationYear(eval_year)
+    return min(date(int(eval_year), 12, 31), today)
 
 
 @dataclass(frozen=True)

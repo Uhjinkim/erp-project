@@ -51,12 +51,13 @@ class DjangoEvaluationRepository(EvaluationRepository):
             raise EvaluationNotFoundError("평가를 찾을 수 없습니다.") from exc
 
     def save(self, evaluation: Evaluation, expected: Evaluation) -> Evaluation:
-        # Optimistic check: the row must still look like what this request loaded.
+        # Status and evaluator must be unchanged since this request loaded the row, so a
+        # concurrent confirmation or reassignment is never overwritten. Concurrent edits of
+        # the same draft are not compared: the last saved content wins.
         updated = EvaluationModel.objects.filter(
             eval_id=expected.eval_id,
             eval_status=expected.status.value,
             evaluator_id=expected.evaluator_no,
-            updated_at=expected.updated_at,
         ).update(
             evaluator_id=evaluation.evaluator_no,
             score=evaluation.score,

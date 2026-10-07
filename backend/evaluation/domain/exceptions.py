@@ -18,6 +18,10 @@ class SelfEvaluationError(EvaluationPermissionError):
     code = "self_evaluation_not_allowed"
 
 
+class HRManagerEvaluatorError(EvaluationPermissionError):
+    code = "hr_manager_cannot_evaluate"
+
+
 class ConfirmationNotAllowedError(EvaluationPermissionError):
     code = "confirmation_not_allowed"
 
