@@ -41,11 +41,18 @@ function ChangeSummary({ request }: { request: PersonalInfoChangeRequest }) {
 
 type PersonalInfoEditorProps = {
   employee: EmployeeDetail
+  reloadKey: number
   onContactUpdated: (employee: EmployeeDetail) => void
+  onRequestsChanged: () => void
 }
 
 /** HR-002: 연락처·주소는 직접 수정하고, 사내 이메일·급여계좌는 변경 요청을 제출한다. */
-export function PersonalInfoEditor({ employee, onContactUpdated }: PersonalInfoEditorProps) {
+export function PersonalInfoEditor({
+  employee,
+  reloadKey,
+  onContactUpdated,
+  onRequestsChanged,
+}: PersonalInfoEditorProps) {
   const [phone, setPhone] = useState(employee.phone ?? "")
   const [address, setAddress] = useState(employee.address ?? "")
   const [email, setEmail] = useState("")
@@ -57,7 +64,7 @@ export function PersonalInfoEditor({ employee, onContactUpdated }: PersonalInfoE
 
   const loadRequests = useCallback(async () => {
     try {
-      setRequests(await listChangeRequests())
+      setRequests(await listChangeRequests({ mine: true }))
     } catch (error) {
       setMessage(errorMessage(error, "변경 요청 내역을 불러오지 못했습니다."))
     }
@@ -66,7 +73,7 @@ export function PersonalInfoEditor({ employee, onContactUpdated }: PersonalInfoE
   useEffect(() => {
     const timer = window.setTimeout(() => void loadRequests(), 0)
     return () => window.clearTimeout(timer)
-  }, [loadRequests])
+  }, [loadRequests, reloadKey])
 
   async function run(action: () => Promise<void>, fallback: string) {
     setBusy(true)
@@ -99,15 +106,15 @@ export function PersonalInfoEditor({ employee, onContactUpdated }: PersonalInfoE
       setEmail("")
       setBankCode("")
       setAccountNo("")
-      await loadRequests()
-      setMessage("변경 요청을 제출했습니다. 인사관리자 승인 후 반영됩니다.")
+      onRequestsChanged()
+      setMessage("변경 요청을 제출했습니다. 승인 후 반영됩니다.")
     }, "변경 요청을 제출하지 못했습니다.")
   }
 
   function cancelRequest(requestId: number) {
     void run(async () => {
       await processChangeRequest(requestId, "cancel")
-      await loadRequests()
+      onRequestsChanged()
       setMessage("변경 요청을 취소했습니다.")
     }, "변경 요청을 취소하지 못했습니다.")
   }
@@ -132,7 +139,7 @@ export function PersonalInfoEditor({ employee, onContactUpdated }: PersonalInfoE
             <label>새 급여계좌<input maxLength={100} placeholder={employee.account_no ?? ""} value={accountNo} onChange={(event) => setAccountNo(event.target.value)} /></label>
           </div>
           <button className="primary" disabled={busy} type="submit">변경 요청</button>
-          <p className="helper">인사관리자가 승인하면 반영됩니다. 급여계좌는 은행 코드와 함께 입력하세요.</p>
+          <p className="helper">승인되면 반영됩니다. 급여계좌는 은행 코드와 함께 입력하세요.</p>
         </form>
       </div>
       <h3>내 변경 요청 <b>{requests.length}</b></h3>
@@ -156,11 +163,16 @@ export function PersonalInfoEditor({ employee, onContactUpdated }: PersonalInfoE
 }
 
 type ChangeRequestApprovalsProps = {
+  alwaysVisible: boolean
+  reloadKey: number
   onProcessed: () => void
 }
 
-/** FN-HR-004: 인사관리자가 대기 중인 변경 요청을 승인·반려한다. */
-export function ChangeRequestApprovals({ onProcessed }: ChangeRequestApprovalsProps) {
+/**
+ * FN-HR-004: 현재 사용자가 처리할 수 있는 대기 요청을 승인·반려한다.
+ * 인사관리자 본인의 요청은 상급자(부서장)가 처리하므로 인사관리자가 아니어도 목록이 보일 수 있다.
+ */
+export function ChangeRequestApprovals({ alwaysVisible, reloadKey, onProcessed }: ChangeRequestApprovalsProps) {
   const [requests, setRequests] = useState<PersonalInfoChangeRequest[]>([])
   const [reasons, setReasons] = useState<Record<number, string>>({})
   const [message, setMessage] = useState("")
@@ -168,7 +180,7 @@ export function ChangeRequestApprovals({ onProcessed }: ChangeRequestApprovalsPr
 
   const loadRequests = useCallback(async () => {
     try {
-      setRequests(await listChangeRequests("대기"))
+      setRequests(await listChangeRequests({ processable: true }))
     } catch (error) {
       setMessage(errorMessage(error, "변경 요청을 불러오지 못했습니다."))
     }
@@ -177,13 +189,12 @@ export function ChangeRequestApprovals({ onProcessed }: ChangeRequestApprovalsPr
   useEffect(() => {
     const timer = window.setTimeout(() => void loadRequests(), 0)
     return () => window.clearTimeout(timer)
-  }, [loadRequests])
+  }, [loadRequests, reloadKey])
 
   async function process(requestId: number, action: "approve" | "reject") {
     setBusy(true)
     try {
       await processChangeRequest(requestId, action, action === "reject" ? reasons[requestId] : undefined)
-      await loadRequests()
       onProcessed()
       setMessage(action === "approve" ? "변경 요청을 승인했습니다." : "변경 요청을 반려했습니다.")
     } catch (error) {
@@ -192,6 +203,8 @@ export function ChangeRequestApprovals({ onProcessed }: ChangeRequestApprovalsPr
       setBusy(false)
     }
   }
+
+  if (!alwaysVisible && requests.length === 0 && !message) return null
 
   return (
     <section className="list-panel">

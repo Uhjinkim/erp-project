@@ -108,8 +108,20 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(errors)
         return attrs
 
+    def validate_emp_no(self, value: int) -> int:
+        # HR-007: 사번은 불변 PK이므로 수정 요청으로 바꿀 수 없다.
+        if self.instance is not None and value != self.instance.employee_no:
+            raise serializers.ValidationError("사번은 변경할 수 없습니다.")
+        return value
+
     def validate_email(self, value: str | None) -> str | None:
-        return value.strip().lower() if value else value
+        value = value.strip().lower() if value else value
+        # HR-003: 등록 이후 사내 이메일은 변경 요청·승인 절차로만 바꾼다.
+        if self.instance is not None and value != self.instance.email:
+            raise serializers.ValidationError(
+                "사내 이메일은 개인정보 변경 요청과 승인 절차로만 변경할 수 있습니다."
+            )
+        return value
 
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
@@ -227,6 +239,10 @@ class ChangeRequestSerializer(serializers.Serializer):
     processed_by = serializers.IntegerField(allow_null=True)
     processed_at = serializers.DateTimeField(allow_null=True)
     reject_reason = serializers.CharField(allow_null=True)
+    can_process = serializers.SerializerMethodField()
 
     def get_changed_fields(self, request: object) -> list[str]:
         return request.requested.changed_fields()
+
+    def get_can_process(self, request: object) -> bool:
+        return request.request_id in self.context.get("processable_ids", set())

@@ -17,6 +17,9 @@ class DjangoPersonalInfoRepository:
     def transaction(self) -> AbstractContextManager[None]:
         return transaction.atomic()
 
+    def lock_employee(self, employee_no: int) -> None:
+        list(Employee.objects.select_for_update().filter(employee_no=employee_no).values("pk"))
+
     def is_active_employee(self, employee_no: int) -> bool:
         employee = Employee.objects.filter(employee_no=employee_no).first()
         return employee is not None and employee.is_active_employee

@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from workforce.domain.exceptions import WorkforceRuleViolation
+from workforce.domain.policies import EmployeeCandidate
 
 # HR-002 / FN-HR-002: 사원이 승인 없이 직접 수정하는 연락처·주소 항목.
 SELF_EDITABLE_FIELDS = frozenset({"phone", "address"})
@@ -61,6 +62,56 @@ def validate_change_request_values(
         )
     if all(getattr(requested, name) == getattr(current, name) for name in changed):
         raise WorkforceRuleViolation("현재 값과 다른 값을 입력하세요.")
+
+
+@dataclass(frozen=True)
+class ProcessorAssignment:
+    """변경 요청 처리자. 요청 시점이 아니라 승인·반려 시점의 조직 정보로 결정한다.
+
+    - ``any_hr_manager``: 인사관리자 누구나 처리한다.
+    - ``employee_no``: 지정된 사원만 처리한다.
+    - 둘 다 비어 있으면 superuser만 처리한다.
+    superuser는 어느 경우든 처리할 수 있다.
+    """
+
+    any_hr_manager: bool = False
+    employee_no: int | None = None
+
+    def allows(
+        self,
+        *,
+        actor_employee_no: int | None,
+        actor_is_hr_manager: bool,
+        actor_is_superuser: bool,
+    ) -> bool:
+        if actor_is_superuser:
+            return True
+        if self.any_hr_manager:
+            return actor_is_hr_manager
+        return self.employee_no is not None and actor_employee_no == self.employee_no
+
+
+def resolve_change_request_processor(
+    *,
+    requester_is_hr_manager: bool,
+    department_head: EmployeeCandidate | None,
+    department_head_is_hr_manager: bool = False,
+) -> ProcessorAssignment:
+    """FN-HR-004 처리자 결정.
+
+    일반 사원의 요청은 인사관리자가 처리한다. 인사관리자 본인의 요청은 상급자(소속 부서장)가
+    처리하며, 요청자가 그 부서장이면 본인이 처리한다. 재직 중인 상급자가 없거나 상급자가
+    인사관리자가 아니면(급여계좌 노출 방지, HR-001) superuser만 처리한다.
+    """
+    if not requester_is_hr_manager:
+        return ProcessorAssignment(any_hr_manager=True)
+    if (
+        department_head is not None
+        and department_head.is_active
+        and department_head_is_hr_manager
+    ):
+        return ProcessorAssignment(employee_no=department_head.employee_no)
+    return ProcessorAssignment()
 
 
 @dataclass

@@ -52,8 +52,14 @@ export async function updateMyContact(values: { phone: string | null, address: s
   })
 }
 
-export async function listChangeRequests(status?: ChangeRequestStatus) {
-  const query = status ? `?status=${encodeURIComponent(status)}` : ""
+export async function listChangeRequests(
+  options: { status?: ChangeRequestStatus, processable?: boolean, mine?: boolean } = {},
+) {
+  const params = new URLSearchParams()
+  if (options.status) params.set("status", options.status)
+  if (options.processable) params.set("processable", "true")
+  if (options.mine) params.set("mine", "true")
+  const query = params.toString() ? `?${params}` : ""
   return requestJson<PersonalInfoChangeRequest[]>(`${changeRequestsPath}${query}`)
 }
 

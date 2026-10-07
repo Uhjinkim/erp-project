@@ -28,6 +28,9 @@ export function WorkforcePanel({ enabled, currentUser }: WorkforcePanelProps) {
   const [myInfo, setMyInfo] = useState<EmployeeDetail | null>(null)
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  // 내 변경 요청과 승인 목록이 서로의 처리 결과를 바로 반영하도록 함께 다시 불러온다.
+  const [requestsVersion, setRequestsVersion] = useState(0)
+  const bumpRequests = () => setRequestsVersion((version) => version + 1)
   // 화면 분기용 안내일 뿐이며, 조회 권한은 백엔드가 HR-001에 따라 검사한다.
   const isHRManager = currentUser.is_superuser || currentUser.roles.includes("HR_MANAGER")
   const hasEmployee = currentUser.employee !== null
@@ -123,9 +126,24 @@ export function WorkforcePanel({ enabled, currentUser }: WorkforcePanelProps) {
         onBack={selectedEmployee ? () => setSelectedEmployee(null) : undefined}
       />
       {!selectedEmployee && myInfo && (
-        <PersonalInfoEditor key={myInfo.emp_no} employee={myInfo} onContactUpdated={setMyInfo} />
+        <PersonalInfoEditor
+          key={myInfo.emp_no}
+          employee={myInfo}
+          reloadKey={requestsVersion}
+          onContactUpdated={setMyInfo}
+          onRequestsChanged={bumpRequests}
+        />
       )}
-      {isHRManager && <ChangeRequestApprovals onProcessed={() => void refresh()} />}
+      {(isHRManager || hasEmployee) && (
+        <ChangeRequestApprovals
+          alwaysVisible={isHRManager}
+          reloadKey={requestsVersion}
+          onProcessed={() => {
+            bumpRequests()
+            void refresh()
+          }}
+        />
+      )}
       <div className={`workforce-grid${isHRManager ? "" : " single"}`}>
         {isHRManager && <section className="list-panel">
           <h3>사원 <b>{filteredEmployees.length}</b></h3>

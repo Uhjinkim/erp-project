@@ -21,6 +21,17 @@ function csrfToken(): string | undefined {
     .join("=")
 }
 
+// DRF는 업무 오류를 {"detail": "..."}로, 입력 검증 오류를 {"field": ["..."]}로 반환한다.
+function errorDetail(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined
+  if ("detail" in body && typeof body.detail === "string") return body.detail
+  for (const value of Object.values(body)) {
+    const message = Array.isArray(value) ? value.find((item) => typeof item === "string") : value
+    if (typeof message === "string") return message
+  }
+  return undefined
+}
+
 export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), environment.apiTimeoutMs)
@@ -41,8 +52,7 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
     const body = await response.json().catch(() => null) as { detail?: string } | T | null
 
     if (!response.ok) {
-      const detail = body && typeof body === "object" && "detail" in body ? body.detail : undefined
-      throw new ApiError(detail ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
+      throw new ApiError(errorDetail(body) ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
     }
 
     return body as T

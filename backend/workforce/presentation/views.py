@@ -6,8 +6,18 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from workforce.application.personal_info import PersonalInfoService, RequestNotFound
-from workforce.application.services import assign_employee_role, revoke_employee_role
+from workforce.application.personal_info import (
+    Actor,
+    PersonalInfoService,
+    ProcessingNotAllowed,
+    RequestNotFound,
+)
+from workforce.application.services import (
+    HR_MANAGER_ROLE,
+    assign_employee_role,
+    employee_has_role,
+    revoke_employee_role,
+)
 from workforce.domain.exceptions import WorkforceRuleViolation
 from workforce.domain.personal_info import ApprovalRequiredValues, ChangeRequestStatus
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
@@ -195,12 +205,26 @@ class RoleViewSet(
 
 
 def personal_info_service() -> PersonalInfoService:
-    return PersonalInfoService(DjangoPersonalInfoRepository(), timezone.now)
+    return PersonalInfoService(
+        DjangoPersonalInfoRepository(), DjangoWorkforceQueryGateway(), timezone.now
+    )
+
+
+def request_actor(request: Request) -> Actor:
+    employee_no = request_employee_no(request)
+    return Actor(
+        employee_no=employee_no,
+        is_hr_manager=employee_no is not None
+        and employee_has_role(employee_no, HR_MANAGER_ROLE, DjangoWorkforceQueryGateway()),
+        is_superuser=request.user.is_superuser,
+    )
 
 
 def rule_violation_response(exc: WorkforceRuleViolation) -> Response:
     if isinstance(exc, RequestNotFound):
         return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, ProcessingNotAllowed):
+        return Response({"detail": exc.message}, status=status.HTTP_403_FORBIDDEN)
     body = {"detail": exc.message}
     if exc.field:
         body["field"] = exc.field
@@ -208,16 +232,13 @@ def rule_violation_response(exc: WorkforceRuleViolation) -> Response:
 
 
 class PersonalInfoChangeRequestViewSet(viewsets.ViewSet):
-    """HR-003: 사내 이메일·급여계좌 변경 요청(FN-HR-003~005, FN-HR-011)."""
+    """HR-003: 사내 이메일·급여계좌 변경 요청(FN-HR-003~005, FN-HR-011).
+
+    승인·반려 처리자는 승인 시점의 조직 정보로 애플리케이션 계층이 판정한다.
+    """
 
     permission_classes = [IsAuthenticated]
     lookup_value_regex = r"\d+"
-
-    def get_permissions(self) -> list[BasePermission]:
-        # FN-HR-004: 승인·반려는 인사관리자만 처리한다.
-        if self.action in {"approve", "reject"}:
-            return [IsAuthenticated(), IsHRManager()]
-        return super().get_permissions()
 
     def list(self, request: Request) -> Response:
         status_value = request.query_params.get("status", "").strip()
@@ -227,12 +248,15 @@ class PersonalInfoChangeRequestViewSet(viewsets.ViewSet):
             return Response(
                 {"detail": "알 수 없는 요청 상태입니다."}, status=status.HTTP_400_BAD_REQUEST
             )
-        requests = personal_info_service().list_requests(
-            viewer_employee_no=request_employee_no(request),
-            viewer_is_hr_manager=self._is_hr_manager(request),
+        service = personal_info_service()
+        actor = request_actor(request)
+        requests = service.list_requests(
+            actor,
             status=status_filter,
+            processable_only=request.query_params.get("processable") == "true",
+            mine_only=request.query_params.get("mine") == "true",
         )
-        return Response(ChangeRequestSerializer(requests, many=True).data)
+        return Response(self._serialize(service, actor, requests, many=True))
 
     def create(self, request: Request) -> Response:
         employee_no = request_employee_no(request)
@@ -243,60 +267,73 @@ class PersonalInfoChangeRequestViewSet(viewsets.ViewSet):
             )
         serializer = ChangeRequestCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        service = personal_info_service()
         try:
-            change_request = personal_info_service().submit_change_request(
+            change_request = service.submit_change_request(
                 employee_no, ApprovalRequiredValues(**serializer.validated_data)
             )
         except WorkforceRuleViolation as exc:
             return rule_violation_response(exc)
         return Response(
-            ChangeRequestSerializer(change_request).data, status=status.HTTP_201_CREATED
+            self._serialize(service, request_actor(request), change_request),
+            status=status.HTTP_201_CREATED,
         )
 
     def retrieve(self, request: Request, pk: str | None = None) -> Response:
+        service = personal_info_service()
+        actor = request_actor(request)
         try:
-            change_request = personal_info_service().get(
-                int(pk),
-                viewer_employee_no=request_employee_no(request),
-                viewer_is_hr_manager=self._is_hr_manager(request),
-            )
+            change_request = service.get(int(pk), actor)
         except WorkforceRuleViolation as exc:
             return rule_violation_response(exc)
-        return Response(ChangeRequestSerializer(change_request).data)
+        return Response(self._serialize(service, actor, change_request))
 
     @action(detail=True, methods=["post"])
     def approve(self, request: Request, pk: str | None = None) -> Response:
+        service = personal_info_service()
+        actor = request_actor(request)
         try:
-            change_request = personal_info_service().approve(
-                int(pk), request_employee_no(request)
-            )
+            change_request = service.approve(int(pk), actor)
         except WorkforceRuleViolation as exc:
             return rule_violation_response(exc)
-        return Response(ChangeRequestSerializer(change_request).data)
+        return Response(self._serialize(service, actor, change_request))
 
     @action(detail=True, methods=["post"])
     def reject(self, request: Request, pk: str | None = None) -> Response:
         serializer = ChangeRequestRejectSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        service = personal_info_service()
+        actor = request_actor(request)
         try:
-            change_request = personal_info_service().reject(
-                int(pk),
-                request_employee_no(request),
-                serializer.validated_data.get("reason"),
+            change_request = service.reject(
+                int(pk), actor, serializer.validated_data.get("reason")
             )
         except WorkforceRuleViolation as exc:
             return rule_violation_response(exc)
-        return Response(ChangeRequestSerializer(change_request).data)
+        return Response(self._serialize(service, actor, change_request))
 
     @action(detail=True, methods=["post"])
     def cancel(self, request: Request, pk: str | None = None) -> Response:
+        service = personal_info_service()
+        actor = request_actor(request)
         try:
-            change_request = personal_info_service().cancel(
-                int(pk), request_employee_no(request)
-            )
+            change_request = service.cancel(int(pk), actor)
         except WorkforceRuleViolation as exc:
             return rule_violation_response(exc)
-        return Response(ChangeRequestSerializer(change_request).data)
+        return Response(self._serialize(service, actor, change_request))
 
-    def _is_hr_manager(self, request: Request) -> bool:
-        return IsHRManager().has_permission(request, self)
+    @staticmethod
+    def _serialize(
+        service: PersonalInfoService,
+        actor: Actor,
+        data: object,
+        *,
+        many: bool = False,
+    ) -> object:
+        items = data if many else [data]
+        processable = {
+            item.request_id for item in items if service.can_process(item, actor)
+        }
+        return ChangeRequestSerializer(
+            data, many=many, context={"processable_ids": processable}
+        ).data

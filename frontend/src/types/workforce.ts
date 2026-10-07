@@ -65,4 +65,5 @@ export type PersonalInfoChangeRequest = {
   processed_by: number | null
   processed_at: string | null
   reject_reason: string | null
+  can_process: boolean
 }
