@@ -10,7 +10,6 @@ from evaluation.application.service import EvaluationService
 from evaluation.domain.entities import Evaluation, EvaluationStatus, EvaluationTarget
 from evaluation.domain.exceptions import (
     DuplicateEvaluationError,
-    EmployeeNotFoundError,
     EvaluationNotFoundError,
     EvaluationPermissionError,
     EvaluationStateError,
@@ -26,6 +25,7 @@ MEMBER = 1001
 OTHER = 3001
 HR = 9001
 RETIRED = 1002
+PARENT_HEAD = 5001
 
 
 class FakeEvaluations(EvaluationRepository):
@@ -76,7 +76,7 @@ class FakeWorkforce(WorkforceGateway):
         self.hr_managers: set[int] = {HR}
         self.targets: dict[int, EvaluationTarget] = {
             MEMBER: EvaluationTarget(MEMBER, True, 10, "STAFF", HEAD),
-            HEAD: EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD),
+            HEAD: EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD, PARENT_HEAD),
             RETIRED: EvaluationTarget(RETIRED, False, 10, "STAFF", HEAD),
         }
 
@@ -138,6 +138,18 @@ def test_ev002_self_evaluation_rejected(service: EvaluationService) -> None:
         create(service, evaluator=HEAD, employee=HEAD)
 
 
+def test_ev001_parent_department_head_evaluates_department_head(
+    service: EvaluationService,
+) -> None:
+    evaluation = create(service, evaluator=PARENT_HEAD, employee=HEAD, score="80")
+
+    assert evaluation.evaluator_no == PARENT_HEAD
+    assert evaluation.employee_no == HEAD
+    assert evaluation.snapshot_position_code == "MANAGER"
+    with pytest.raises(EvaluationPermissionError):
+        create(service, evaluator=PARENT_HEAD, employee=MEMBER)
+
+
 def test_inactive_evaluator_cannot_create(service: EvaluationService) -> None:
     with pytest.raises(InactiveEmployeeError):
         create(service, evaluator=RETIRED)
@@ -148,9 +160,32 @@ def test_retired_target_cannot_be_evaluated(service: EvaluationService) -> None:
         create(service, employee=RETIRED)
 
 
-def test_unknown_target_is_not_found(service: EvaluationService) -> None:
-    with pytest.raises(EmployeeNotFoundError):
+def test_unknown_target_is_reported_as_permission_error(service: EvaluationService) -> None:
+    with pytest.raises(EvaluationPermissionError):
         create(service, employee=4040)
+
+
+def test_non_evaluator_cannot_learn_target_status(service: EvaluationService) -> None:
+    """HR-001: unknown, retired and ordinary targets look identical to an outsider."""
+    messages = []
+    for target in (4040, RETIRED, MEMBER, HEAD):
+        with pytest.raises(EvaluationPermissionError) as error:
+            create(service, evaluator=OTHER, employee=target)
+        messages.append((type(error.value), str(error.value)))
+    assert len(set(messages)) == 1
+
+
+def test_revise_without_comments_keeps_existing_comments(service: EvaluationService) -> None:
+    created = create(service)
+    revised = service.revise_evaluation(
+        ReviseEvaluationCommand(created.eval_id or 0, HEAD, Decimal("90"))
+    )
+    assert revised.comments == "의견"
+
+    cleared = service.revise_evaluation(
+        ReviseEvaluationCommand(created.eval_id or 0, HEAD, Decimal("90"), "")
+    )
+    assert cleared.comments == ""
 
 
 def test_one_evaluation_per_employee_and_year(service: EvaluationService) -> None:

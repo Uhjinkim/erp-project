@@ -25,14 +25,30 @@ class EvaluationTarget:
     department_no: int | None
     position_code: str | None
     department_head_no: int | None
+    parent_department_head_no: int | None = None
+
+    @property
+    def is_department_head(self) -> bool:
+        return self.department_head_no == self.employee_no
+
+    @property
+    def designated_evaluator_no(self) -> int | None:
+        """EV-001: members are evaluated by their department head, heads by the parent's head."""
+        if self.is_department_head:
+            return self.parent_department_head_no
+        return self.department_head_no
+
+
+EVALUATOR_PERMISSION_MESSAGE = "해당 사원을 평가할 권한이 없습니다."
 
 
 def ensure_can_evaluate(evaluator_no: int, target: EvaluationTarget) -> None:
-    """EV-001/EV-002: only the target's department head evaluates, never themselves."""
+    """EV-001/EV-002: only the designated department head evaluates, never themselves."""
     if evaluator_no == target.employee_no:
         raise SelfEvaluationError("본인을 평가할 수 없습니다.")
-    if target.department_head_no is None or target.department_head_no != evaluator_no:
-        raise EvaluationPermissionError("소속 부서장만 해당 사원을 평가할 수 있습니다.")
+    if target.designated_evaluator_no != evaluator_no:
+        # One message for every case so callers cannot infer the target's role or status.
+        raise EvaluationPermissionError(EVALUATOR_PERMISSION_MESSAGE)
 
 
 @dataclass
@@ -84,14 +100,18 @@ class Evaluation:
             updated_at=now,
         )
 
-    def revise(self, actor_no: int, score: Decimal, comments: str, now: datetime) -> None:
+    def revise(
+        self, actor_no: int, score: Decimal, comments: str | None, now: datetime
+    ) -> None:
+        """Comments of None keep the current text; an empty string clears it."""
         if actor_no != self.evaluator_no:
             raise EvaluationPermissionError("평가 작성자만 평가를 수정할 수 있습니다.")
         self._require_draft("확정된 평가는 수정할 수 없습니다.")
         validated = EvaluationScore(score)
         self.score = validated.value
         self.grade = validated.grade
-        self.comments = comments
+        if comments is not None:
+            self.comments = comments
         self.updated_at = now
 
     def confirm(self, actor_no: int, now: datetime) -> None:

@@ -3,10 +3,13 @@ from datetime import datetime
 
 from evaluation.application.dto import CreateEvaluationCommand, ReviseEvaluationCommand
 from evaluation.application.ports import WorkforceGateway
-from evaluation.domain.entities import Evaluation
+from evaluation.domain.entities import (
+    EVALUATOR_PERMISSION_MESSAGE,
+    Evaluation,
+    ensure_can_evaluate,
+)
 from evaluation.domain.exceptions import (
     DuplicateEvaluationError,
-    EmployeeNotFoundError,
     EvaluationNotFoundError,
     EvaluationPermissionError,
     InactiveEmployeeError,
@@ -30,8 +33,10 @@ class EvaluationService:
         self._ensure_active(command.evaluator_no)
         EvaluationYear(command.eval_year)
         target = self.workforce.evaluation_target(command.employee_no)
+        # Check authority before revealing anything about the target (HR-001).
         if target is None:
-            raise EmployeeNotFoundError("평가 대상 사원을 찾을 수 없습니다.")
+            raise EvaluationPermissionError(EVALUATOR_PERMISSION_MESSAGE)
+        ensure_can_evaluate(command.evaluator_no, target)
         if not target.is_active:
             raise InactiveEmployeeError("재직 중인 사원만 평가할 수 있습니다.")
 

@@ -53,7 +53,11 @@ def client_for(employee: Employee) -> APIClient:
 
 @pytest.fixture
 def org() -> dict[str, Employee]:
-    department = Department.objects.create(dept_no=10, dept_name="개발팀")
+    division = Department.objects.create(dept_no=1, dept_name="기술본부")
+    parent_head = create_employee(5001, "director@example.com", department=division)
+    division.head = parent_head
+    division.save(update_fields=["head"])
+    department = Department.objects.create(dept_no=10, dept_name="개발팀", parent=division)
     head = create_employee(2001, "head@example.com", department=department)
     department.head = head
     department.save(update_fields=["head"])
@@ -64,7 +68,13 @@ def org() -> dict[str, Employee]:
         role_code=HR_MANAGER_ROLE, defaults={"role_name": "인사관리자"}
     )
     EmployeeRole.objects.create(employee=hr, role=role, assigned_at=timezone.now())
-    return {"head": head, "member": member, "other": other, "hr": hr}
+    return {
+        "parent_head": parent_head,
+        "head": head,
+        "member": member,
+        "other": other,
+        "hr": hr,
+    }
 
 
 def create_evaluation(client: APIClient, emp_no: int = 1001, score: str = "85.5"):
@@ -101,6 +111,27 @@ def test_self_evaluation_is_rejected(org) -> None:
     response = create_evaluation(client_for(org["head"]), emp_no=2001)
     assert response.status_code == 403
     assert response.data["code"] == "self_evaluation_not_allowed"
+
+
+@pytest.mark.django_db
+def test_parent_department_head_evaluates_department_head(org) -> None:
+    parent_head = client_for(org["parent_head"])
+
+    response = create_evaluation(parent_head, emp_no=2001, score="90")
+    assert response.status_code == 201, response.data
+    assert response.data["evaluator_no"] == 5001
+    assert response.data["snapshot_dept_no"] == 10
+    assert response.data["grade"] == "S"
+
+    skip_level = create_evaluation(parent_head, emp_no=1001)
+    assert skip_level.status_code == 403
+
+
+@pytest.mark.django_db
+def test_top_level_head_cannot_be_evaluated(org) -> None:
+    response = create_evaluation(client_for(org["head"]), emp_no=5001)
+    assert response.status_code == 403
+    assert response.data["code"] == "permission_denied"
 
 
 @pytest.mark.django_db
@@ -193,3 +224,35 @@ def test_missing_evaluation_returns_404(org) -> None:
 @pytest.mark.django_db
 def test_unauthenticated_request_is_rejected() -> None:
     assert APIClient().get("/api/evaluations/").status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_patch_without_comments_keeps_existing_comments(org) -> None:
+    head = client_for(org["head"])
+    eval_id = create_evaluation(head).data["eval_id"]
+
+    response = head.patch(f"/api/evaluations/{eval_id}/", {"score": "92"}, format="json")
+    assert response.status_code == 200
+    assert response.data["comments"] == "우수"
+    assert EvaluationModel.objects.get(eval_id=eval_id).comments == "우수"
+
+
+@pytest.mark.django_db
+def test_outsider_gets_identical_response_for_any_target(org) -> None:
+    create_employee(1002, "retired@example.com", tenure_status=Employee.TenureStatus.TERMINATED)
+    other = client_for(org["other"])
+
+    responses = [create_evaluation(other, emp_no=emp_no) for emp_no in (4040, 1002, 1001, 2001)]
+    assert {response.status_code for response in responses} == {403}
+    assert len({(r.data["code"], r.data["detail"]) for r in responses}) == 1
+
+
+def test_evaluation_admin_is_read_only() -> None:
+    from django.contrib.admin.sites import site
+    from django.test import RequestFactory
+
+    model_admin = site._registry[EvaluationModel]
+    request = RequestFactory().get("/admin/")
+    assert not model_admin.has_add_permission(request)
+    assert not model_admin.has_change_permission(request)
+    assert not model_admin.has_delete_permission(request)

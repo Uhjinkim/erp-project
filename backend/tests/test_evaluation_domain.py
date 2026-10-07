@@ -1,4 +1,5 @@
 import ast
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +23,7 @@ from evaluation.domain.value_objects import EvaluationScore, EvaluationYear, Gra
 NOW = datetime(2026, 10, 6, tzinfo=UTC)
 HEAD = 2001
 MEMBER = 1001
+PARENT_HEAD = 5001
 TARGET = EvaluationTarget(
     employee_no=MEMBER,
     is_active=True,
@@ -93,7 +95,34 @@ def test_ev001_target_without_department_head_cannot_be_evaluated() -> None:
 
 
 def test_ev002_self_evaluation_is_rejected_even_for_department_head() -> None:
-    head_target = EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD)
+    head_target = EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD, PARENT_HEAD)
+    with pytest.raises(SelfEvaluationError):
+        ensure_can_evaluate(HEAD, head_target)
+
+
+
+def test_ev001_department_head_is_evaluated_by_parent_department_head() -> None:
+    head_target = EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD, PARENT_HEAD)
+
+    ensure_can_evaluate(PARENT_HEAD, head_target)
+    with pytest.raises(EvaluationPermissionError):
+        ensure_can_evaluate(3001, head_target)
+
+
+def test_ev001_parent_head_cannot_skip_level_to_evaluate_members() -> None:
+    member_target = replace(TARGET, parent_department_head_no=PARENT_HEAD)
+    with pytest.raises(EvaluationPermissionError):
+        ensure_can_evaluate(PARENT_HEAD, member_target)
+
+
+def test_ev001_top_level_head_without_parent_head_cannot_be_evaluated() -> None:
+    top_head = EvaluationTarget(PARENT_HEAD, True, 1, "DIRECTOR", PARENT_HEAD, None)
+    with pytest.raises(EvaluationPermissionError):
+        ensure_can_evaluate(HEAD, top_head)
+
+
+def test_ev002_head_of_both_department_and_parent_cannot_self_evaluate() -> None:
+    head_target = EvaluationTarget(HEAD, True, 10, "MANAGER", HEAD, HEAD)
     with pytest.raises(SelfEvaluationError):
         ensure_can_evaluate(HEAD, head_target)
 

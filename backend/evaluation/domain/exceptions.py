@@ -18,10 +18,6 @@ class InactiveEmployeeError(EvaluationError):
     code = "inactive_employee"
 
 
-class EmployeeNotFoundError(EvaluationError):
-    code = "employee_not_found"
-
-
 class EvaluationNotFoundError(EvaluationError):
     code = "evaluation_not_found"
 

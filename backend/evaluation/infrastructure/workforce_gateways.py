@@ -15,17 +15,19 @@ class DjangoWorkforceGateway(WorkforceGateway):
 
     def evaluation_target(self, employee_no: int) -> EvaluationTarget | None:
         employee = (
-            Employee.objects.select_related("department")
+            Employee.objects.select_related("department__parent")
             .filter(employee_no=employee_no)
             .first()
         )
         if employee is None:
             return None
         department = employee.department
+        parent = department.parent if department is not None else None
         return EvaluationTarget(
             employee_no=employee.employee_no,
             is_active=employee.is_active_employee,
             department_no=employee.department_id,
             position_code=employee.position_id,
             department_head_no=department.head_id if department is not None else None,
+            parent_department_head_no=parent.head_id if parent is not None else None,
         )

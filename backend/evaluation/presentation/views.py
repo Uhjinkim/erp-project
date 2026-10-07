@@ -15,7 +15,6 @@ from evaluation.application.dto import (
 from evaluation.application.service import EvaluationService
 from evaluation.domain.exceptions import (
     DuplicateEvaluationError,
-    EmployeeNotFoundError,
     EvaluationError,
     EvaluationNotFoundError,
     EvaluationPermissionError,
@@ -53,7 +52,7 @@ class EvaluationAPIView(APIView):
         response_status = status.HTTP_400_BAD_REQUEST
         if isinstance(error, (EvaluationPermissionError, InactiveEmployeeError)):
             response_status = status.HTTP_403_FORBIDDEN
-        elif isinstance(error, (EvaluationNotFoundError, EmployeeNotFoundError)):
+        elif isinstance(error, EvaluationNotFoundError):
             response_status = status.HTTP_404_NOT_FOUND
         elif isinstance(error, (DuplicateEvaluationError, EvaluationStateError)):
             response_status = status.HTTP_409_CONFLICT
@@ -110,7 +109,7 @@ class EvaluationDetailView(EvaluationAPIView):
                     eval_id=eval_id,
                     actor_no=self.employee_no(request),
                     score=data["score"],
-                    comments=data["comments"],
+                    comments=data.get("comments"),
                 )
             )
             return Response(evaluation_to_dict(item))

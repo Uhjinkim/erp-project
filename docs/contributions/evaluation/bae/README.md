@@ -22,7 +22,11 @@
 - 도메인·애플리케이션 결정:
   - 상태는 `작성중 → 확정` 단방향이다. 확정된 평가는 수정·재확정할 수 없다(409).
   - 평가자는 작성 시점에 대상자 소속 부서의 부서장(`departments.head_emp_no`)이어야 한다.
-    부서장이 없는 부서의 사원, 부서장 본인은 평가할 수 없다(자기평가 금지).
+    대상자가 소속 부서의 부서장이면 상위 부서(`parent_dept_no`)의 부서장이 평가한다
+    (사용자 확인, 2026-10-06). 상위 부서장이 하위 부서원을 건너뛰어 평가할 수는 없다.
+    평가자가 본인이 되는 경우는 자기평가로 거절한다.
+  - **미정**: 부서장이 없는 부서의 사원, 상위 부서(또는 상위 부서장)가 없는 최상위 부서장은
+    현재 평가할 수 없다(403). 대체 평가자 정책 확인이 필요하다.
   - 작성 시점의 대상자 부서·직급을 `snapshot_dept_no`, `snapshot_pos_code`에 보존한다.
   - 등급은 점수로부터 서버가 계산해 저장하며 클라이언트가 지정할 수 없다.
   - 점수는 0.00~100.00, 소수점 둘째 자리까지(`numeric(5,2)`).
@@ -34,6 +38,10 @@
   - 수정은 최초 작성자만 가능하다. 작성 후 부서장이 바뀐 경우의 처리 방식은 미정이다.
   - 확정과 수정은 저장 시 `eval_status = '작성중'` 조건부 UPDATE로 처리해 동시 확정 후 덮어쓰기를
     막는다.
+  - 작성 요청은 평가 권한을 대상자 존재·재직 여부보다 먼저 확인한다. 권한이 없으면 대상자가
+    없는 사번·퇴사자·부서장·일반 사원 모두 같은 403 `permission_denied` 응답을 받아 타인의
+    재직 상태나 역할을 추정할 수 없다(HR-001).
+  - Django admin의 평가 화면은 읽기 전용이다. 등급·상태 규칙을 우회하지 않도록 쓰기는 API로만 한다.
 
 ## 인터페이스와 데이터 영향
 
@@ -42,9 +50,9 @@
   | 메서드 | 경로 | 설명 | 권한 |
   | --- | --- | --- | --- |
   | `GET` | `/api/evaluations/?year=YYYY` | 평가 목록 | 조회 범위 규칙 적용 |
-  | `POST` | `/api/evaluations/` | 평가 작성 `{emp_no, eval_year, score, comments?}` | 대상자 소속 부서장 |
+  | `POST` | `/api/evaluations/` | 평가 작성 `{emp_no, eval_year, score, comments?}` | 대상자 소속 부서장(부서장이 대상이면 상위 부서장) |
   | `GET` | `/api/evaluations/<eval_id>/` | 평가 상세 | 조회 범위 규칙 적용 |
-  | `PATCH` | `/api/evaluations/<eval_id>/` | 작성중 평가 수정 `{score, comments?}` | 평가 작성자 |
+  | `PATCH` | `/api/evaluations/<eval_id>/` | 작성중 평가 수정 `{score, comments?}`; `comments` 생략 시 기존 의견 유지, `""`는 삭제 | 평가 작성자 |
   | `POST` | `/api/evaluations/<eval_id>/confirm/` | 평가 확정 | 인사관리자(`HR_MANAGER`) |
 
   응답 필드: `eval_id`, `emp_no`, `employee_name`, `eval_year`, `snapshot_dept_no`,
@@ -63,8 +71,8 @@
 ## 검증
 
 - 실행한 테스트 (`backend/`):
-  - `uv run pytest` — 115 passed (신규 `test_evaluation_domain.py`, `test_evaluation_service.py`,
-    `test_evaluation_api.py` 51건 포함, 계층 의존성 검사 포함)
+  - `uv run pytest` — 127 passed (신규 `test_evaluation_domain.py`, `test_evaluation_service.py`,
+    `test_evaluation_api.py` 63건 포함, 계층 의존성 검사 포함)
   - `uv run ruff check .` — 통과
   - `uv run python manage.py check` — 이상 없음
   - `uv run python manage.py makemigrations --check --dry-run` — No changes detected
@@ -73,7 +81,8 @@
 
 ## 공용 문서 반영 후보
 
-- Notion 원문: 등급 기준(S≥90, A≥80, B≥70, C<70)을 비즈니스 규칙 EV-003에 명시. 사원·연도당
+- Notion 원문: 등급 기준(S≥90, A≥80, B≥70, C<70)을 EV-003에, 부서장은 상위 부서장이
+  평가한다는 규칙을 EV-001에 명시. 최상위 부서장·부서장 공석 시 대체 평가자 정책 확정 요청. 사원·연도당
   1건 제한, 평가 대상자의 작성중 평가 비공개, 부서장 교체 시 수정 권한 정책 확정 요청.
   `FN-EV-001`~`FN-EV-004` 개별 기능 정의 확인.
 - 저장소 명세·README: `06-api-specification.md`에 위 평가 API 추가, `08-table-specification.md`

@@ -18,7 +18,7 @@ class ReviseEvaluationCommand:
     eval_id: int
     actor_no: int
     score: Decimal
-    comments: str = ""
+    comments: str | None = None
 
 
 def evaluation_to_dict(evaluation: Evaluation) -> dict[str, object]:

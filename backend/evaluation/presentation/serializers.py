@@ -10,7 +10,8 @@ class EvaluationCreateSerializer(serializers.Serializer):
 
 class EvaluationUpdateSerializer(serializers.Serializer):
     score = serializers.DecimalField(max_digits=5, decimal_places=2)
-    comments = serializers.CharField(required=False, allow_blank=True, default="")
+    # Omitted comments keep the stored text, so no default here.
+    comments = serializers.CharField(required=False, allow_blank=True)
 
 
 class EvaluationListQuerySerializer(serializers.Serializer):
