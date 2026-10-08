@@ -3,7 +3,7 @@ from datetime import date
 from django.db.models import Q
 
 from evaluation.application.ports import WorkforceGateway
-from evaluation.domain.entities import EvaluationTarget
+from evaluation.domain.entities import EvaluationTarget, EvaluatorCandidate
 from workforce.application.services import HR_MANAGER_ROLE, employee_has_role
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
 from workforce.infrastructure.models import Department, Employee, EmploymentHistory
@@ -16,6 +16,25 @@ class DjangoWorkforceGateway(WorkforceGateway):
 
     def is_hr_manager(self, employee_no: int) -> bool:
         return employee_has_role(employee_no, HR_MANAGER_ROLE, DjangoWorkforceQueryGateway())
+
+    def is_department_head(self, employee_no: int) -> bool:
+        return Department.objects.filter(head_id=employee_no).exists()
+
+    def evaluator_candidates(self) -> list[EvaluatorCandidate]:
+        departments = Department.objects.select_related("head__person").filter(
+            head__isnull=False
+        )
+        return [
+            EvaluatorCandidate(
+                employee_no=department.head.employee_no,
+                name=department.head.person.name,
+                department_no=department.dept_no,
+                department_name=department.dept_name,
+            )
+            for department in departments
+            if department.head.is_active_employee
+            and not self.is_hr_manager(department.head.employee_no)
+        ]
 
     def evaluation_target(self, employee_no: int, as_of: date) -> EvaluationTarget | None:
         employee = Employee.objects.filter(employee_no=employee_no).first()

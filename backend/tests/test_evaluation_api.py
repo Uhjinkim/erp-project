@@ -76,6 +76,7 @@ def org() -> dict[str, Employee]:
     department.save(update_fields=["head"])
     member = create_employee(1001, "member@example.com", department=department)
     new_head = create_employee(2002, "newhead@example.com", department=department)
+    Department.objects.create(dept_no=30, dept_name="기획팀", parent=division, head=new_head)
     other = create_employee(3001, "other@example.com")
     hr = create_employee(9001, "hr@example.com")
     make_hr_manager(hr)
@@ -395,6 +396,40 @@ def test_fn_ev_001_hr_manager_is_never_an_evaluator(org) -> None:
         assert response.status_code == 403
         assert response.data["code"] == "hr_manager_cannot_evaluate"
     assert EvaluationModel.objects.get(eval_id=eval_id).evaluator_id == 2001
+
+
+@pytest.mark.django_db
+def test_reassignment_only_to_department_heads_via_candidate_list(org) -> None:
+    hr = client_for(org["hr"])
+    eval_id = create_evaluation(client_for(org["head"])).data["eval_id"]
+
+    candidates = hr.get("/api/evaluations/evaluator-candidates/")
+    assert candidates.status_code == 200
+    candidate_nos = {item["emp_no"] for item in candidates.data}
+    assert {2001, 2002, 5001} <= candidate_nos
+    assert 9001 not in candidate_nos and 3001 not in candidate_nos
+    assert client_for(org["head"]).get("/api/evaluations/evaluator-candidates/").status_code == 403
+
+    not_head = hr.post(
+        f"/api/evaluations/{eval_id}/reassign/",
+        {"evaluator_no": 3001, "reason": "사유"},
+        format="json",
+    )
+    assert not_head.status_code == 403
+    assert not_head.data["code"] == "evaluator_must_be_department_head"
+
+
+@pytest.mark.django_db
+def test_hr_actions_hide_own_unconfirmed_evaluation(org) -> None:
+    department = org["member"].department
+    org["hr"].department = department
+    org["hr"].save(update_fields=["department"])
+    head = client_for(org["head"])
+    eval_id = create_evaluation(head, emp_no=9001).data["eval_id"]
+    head.post(f"/api/evaluations/{eval_id}/submit/")
+
+    response = client_for(org["hr"]).post(f"/api/evaluations/{eval_id}/confirm/")
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db

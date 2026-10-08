@@ -11,12 +11,18 @@ from evaluation.presentation.views import (
     EvaluationReassignView,
     EvaluationReturnView,
     EvaluationSubmitView,
+    EvaluatorCandidateListView,
 )
 
 app_name = "evaluation"
 
 urlpatterns = [
     path("", EvaluationListCreateView.as_view(), name="evaluation-list-create"),
+    path(
+        "evaluator-candidates/",
+        EvaluatorCandidateListView.as_view(),
+        name="evaluator-candidates",
+    ),
     path("<int:eval_id>/", EvaluationDetailView.as_view(), name="evaluation-detail"),
     path("<int:eval_id>/history/", EvaluationHistoryView.as_view(), name="evaluation-history"),
     path("<int:eval_id>/submit/", EvaluationSubmitView.as_view(), name="evaluation-submit"),

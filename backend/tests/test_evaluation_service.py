@@ -17,6 +17,7 @@ from evaluation.domain.entities import (
     EvaluationHistory,
     EvaluationStatus,
     EvaluationTarget,
+    EvaluatorCandidate,
 )
 from evaluation.domain.exceptions import (
     ConfirmationNotAllowedError,
@@ -28,6 +29,7 @@ from evaluation.domain.exceptions import (
     EvaluationYearNotAllowedError,
     HRManagerEvaluatorError,
     InactiveEmployeeError,
+    NotDepartmentHeadError,
     SelfEvaluationError,
 )
 from evaluation.domain.repositories import (
@@ -125,6 +127,7 @@ class FakeWorkforce(WorkforceGateway):
         self.inactive: set[int] = {RETIRED, ON_LEAVE}
         self.hr_managers: set[int] = {HR, HR_2}
         self.requested_dates: list[date] = []
+        self.heads: set[int] = {HEAD, NEW_HEAD, PARENT_HEAD}
         self.targets: dict[int, EvaluationTarget] = {
             MEMBER: EvaluationTarget(MEMBER, True, 10, "STAFF", HEAD),
             ON_LEAVE: EvaluationTarget(ON_LEAVE, True, 10, "STAFF", HEAD),
@@ -137,6 +140,16 @@ class FakeWorkforce(WorkforceGateway):
 
     def is_hr_manager(self, employee_no: int) -> bool:
         return employee_no in self.hr_managers
+
+    def is_department_head(self, employee_no: int) -> bool:
+        return employee_no in self.heads
+
+    def evaluator_candidates(self) -> list[EvaluatorCandidate]:
+        return [
+            EvaluatorCandidate(no, f"부서장 {no}", no, f"부서 {no}")
+            for no in sorted(self.heads)
+            if self.is_active_employee(no) and not self.is_hr_manager(no)
+        ]
 
     def evaluation_target(self, employee_no: int, as_of: date) -> EvaluationTarget | None:
         self.requested_dates.append(as_of)
@@ -446,6 +459,59 @@ def test_evaluator_who_became_hr_manager_must_be_reassigned(
     service.revise_evaluation(ReviseEvaluationCommand(eval_id, NEW_HEAD, Decimal("70")))
 
 
+def test_fn_ev_001_reassignment_target_must_be_department_head(
+    service: EvaluationService, uow: FakeUnitOfWork
+) -> None:
+    eval_id = create(service).eval_id or 0
+    with pytest.raises(NotDepartmentHeadError):
+        service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, OTHER, "사유"))
+    assert uow.evaluations.get(eval_id).evaluator_no == HEAD
+
+
+def test_evaluator_who_lost_head_post_must_be_reassigned(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    eval_id = create(service).eval_id or 0
+    workforce.heads.discard(HEAD)
+
+    with pytest.raises(NotDepartmentHeadError):
+        service.revise_evaluation(ReviseEvaluationCommand(eval_id, HEAD, Decimal("70")))
+    with pytest.raises(NotDepartmentHeadError):
+        service.submit_evaluation(eval_id, HEAD)
+
+    service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, NEW_HEAD, "보직 변경"))
+    service.submit_evaluation(eval_id, NEW_HEAD)
+
+
+def test_evaluator_candidates_are_for_hr_only(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    workforce.heads.add(HR)  # an HR manager who heads a department is not a candidate
+    candidates = service.evaluator_candidates(HR)
+    assert [item.employee_no for item in candidates] == [HEAD, NEW_HEAD, PARENT_HEAD]
+    with pytest.raises(EvaluationPermissionError):
+        service.evaluator_candidates(HEAD)
+
+
+def test_hr_actions_on_own_unconfirmed_evaluation_look_missing(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    """EV-005: an HR manager cannot detect their own unconfirmed evaluation via HR actions."""
+    workforce.targets[HR] = EvaluationTarget(HR, True, 10, "STAFF", HEAD)
+    eval_id = submitted(service, employee=HR)
+
+    for action in (
+        lambda: service.confirm_evaluation(eval_id, HR),
+        lambda: service.return_evaluation(eval_id, HR, "사유"),
+        lambda: service.exclude_evaluation(eval_id, HR, "사유"),
+        lambda: service.reassign_evaluation(
+            ReassignEvaluationCommand(eval_id, HR, NEW_HEAD, "사유")
+        ),
+    ):
+        with pytest.raises(EvaluationNotFoundError):
+            action()
+
+
 def test_non_hr_caller_learns_nothing_from_reassign(service: EvaluationService) -> None:
     eval_id = create(service).eval_id or 0
     for new_evaluator in (RETIRED, HR_2, NEW_HEAD):
@@ -462,7 +528,7 @@ def test_hr_manager_cannot_confirm_own_evaluation(
     workforce.targets[HR] = EvaluationTarget(HR, True, 10, "STAFF", HEAD)
     eval_id = submitted(service, employee=HR)
 
-    with pytest.raises(EvaluationPermissionError):
+    with pytest.raises(EvaluationNotFoundError):
         service.confirm_evaluation(eval_id, HR)
     assert service.confirm_evaluation(eval_id, HR_2).confirmed_by == HR_2
 

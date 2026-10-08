@@ -9,6 +9,7 @@ from evaluation.domain.exceptions import (
     EvaluationStateError,
     HRManagerEvaluatorError,
     InvalidEvaluationError,
+    NotDepartmentHeadError,
     SelfEvaluationError,
 )
 from evaluation.domain.value_objects import EvaluationScore, EvaluationYear, Grade, Reason
@@ -88,6 +89,19 @@ def ensure_not_hr_manager_evaluator(is_hr_manager: bool) -> None:
         )
 
 
+def ensure_eligible_evaluator(is_department_head: bool, is_hr_manager: bool) -> None:
+    """FN-EV-001: an evaluator is always a current department head who is not an HR manager.
+
+    Applied when assigning an evaluator and again whenever the evaluator edits or submits,
+    so someone who has lost the head post must be replaced by an HR reassignment first.
+    """
+    ensure_not_hr_manager_evaluator(is_hr_manager)
+    if not is_department_head:
+        raise NotDepartmentHeadError(
+            "평가자는 현재 부서장이어야 합니다. 인사관리자가 부서장으로 재배정해야 합니다."
+        )
+
+
 def ensure_can_evaluate(evaluator_no: int, target: EvaluationTarget) -> None:
     """EV-001/EV-002: only the designated department head evaluates, never themselves."""
     if evaluator_no == target.employee_no:
@@ -95,6 +109,14 @@ def ensure_can_evaluate(evaluator_no: int, target: EvaluationTarget) -> None:
     if target.designated_evaluator_no != evaluator_no:
         # One message for every case so callers cannot infer the target's role or status.
         raise EvaluationPermissionError(EVALUATOR_PERMISSION_MESSAGE)
+
+
+@dataclass(frozen=True)
+class EvaluatorCandidate:
+    employee_no: int
+    name: str
+    department_no: int
+    department_name: str
 
 
 @dataclass

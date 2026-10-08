@@ -12,6 +12,7 @@ from evaluation.application.dto import (
     CreateEvaluationCommand,
     ReassignEvaluationCommand,
     ReviseEvaluationCommand,
+    candidate_to_dict,
     evaluation_to_dict,
     history_to_dict,
 )
@@ -109,6 +110,15 @@ class EvaluationListCreateView(EvaluationAPIView):
             ),
             status.HTTP_201_CREATED,
         )
+
+
+class EvaluatorCandidateListView(EvaluationAPIView):
+    def get(self, request: Request) -> Response:
+        try:
+            candidates = self.service.evaluator_candidates(self.employee_no(request))
+            return Response([candidate_to_dict(item) for item in candidates])
+        except EvaluationError as error:
+            return self.error_response(error)
 
 
 class EvaluationDetailView(EvaluationAPIView):

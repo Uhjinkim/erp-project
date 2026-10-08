@@ -22,6 +22,10 @@ class HRManagerEvaluatorError(EvaluationPermissionError):
     code = "hr_manager_cannot_evaluate"
 
 
+class NotDepartmentHeadError(EvaluationPermissionError):
+    code = "evaluator_must_be_department_head"
+
+
 class ConfirmationNotAllowedError(EvaluationPermissionError):
     code = "confirmation_not_allowed"
 

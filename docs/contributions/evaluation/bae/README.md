@@ -8,9 +8,10 @@
 ## 기능 범위
 
 - 구현 범위: 인사평가 작성·수정·제출(평가자), 반려·평가자 재배정·평가 제외·제외 취소·확정·
-  확정 취소(인사관리자), 상세·목록·이력 조회 백엔드 API. `evaluations` 테이블 모델 등록과 평가 워크플로용
+  확정 취소(인사관리자), 상세·목록·이력 조회 백엔드 API와 프론트엔드
+  인사평가 화면(`EvaluationPanel`). `evaluations` 테이블 모델 등록과 평가 워크플로용
   스키마 변경 마이그레이션.
-- 제외 범위: 프론트엔드 화면, 평가 회차, 근무 기간에 따른 점수 보정,
+- 제외 범위: 평가 회차, 근무 기간에 따른 점수 보정,
   평가 기간(시작·종료일) 기록.
 
 ## 설계 결정
@@ -57,11 +58,16 @@
   인사관리자가 재배정해야 진행된다. 재배정 대상은 재직 사원이어야 한다.
 - 점수·의견은 현재 평가자만 수정한다. 인사관리자는 재배정·반려·제외·제외 취소·확정·확정 취소만
   수행한다.
-- FN-EV-001에 따라 **인사관리자는 평가자가 될 수 없다**(사용자 확인, 2026-10-07). 코드
-  `hr_manager_cannot_evaluate`(403)로 거절하는 지점은 다음과 같다.
-  - 재배정: 인사관리자(재배정하는 본인 포함)를 새 평가자로 지정할 수 없다.
+- FN-EV-001에 따라 **평가자는 항상 현재 부서장이며 인사관리자는 평가자가 될 수 없다**
+  (사용자 확인, 2026-10-07). 재배정은 인사관리자만 하며 화면에서 후보를 골라 실행한다.
+  - 재배정: 새 평가자는 재직 중이고, 현재 어느 부서든 부서장이며, 인사관리자가 아니어야 한다.
+    부서장이 아니면 `evaluator_must_be_department_head`, 인사관리자면 `hr_manager_cannot_evaluate`
+    (모두 403). 후보 목록은 `GET /api/evaluations/evaluator-candidates/`(인사관리자 전용)로 제공한다.
   - 작성: 인사관리자 역할이 있는 부서장은 평가를 새로 작성할 수 없다.
-  - 수정·제출: 평가자로 지정된 뒤 인사관리자 역할을 받았다면 재배정 전까지 수정·제출할 수 없다.
+  - 수정·제출: 현재 평가자가 부서장 보직을 잃었거나 인사관리자 역할을 받았다면 재배정 전까지
+    수정·제출할 수 없다. 매 저장 시 다시 확인한다.
+  - 이에 따라 과거 실적을 평가할 이전 부서장도 **현재 부서장**이어야 지정할 수 있다. 보직이 끝난
+    이전 부서장은 평가자가 될 수 없다.
   - 재배정 대상 검사(재직 여부, 인사관리자 여부)는 호출자가 인사관리자로 확인된 뒤에 수행해,
     권한 없는 사원이 다른 사원의 상태를 알아낼 수 없게 한다.
 - 확정 불가: 평가 대상자 본인, 현재 평가자, 이력상 작성·수정·제출을 한 이전 평가자. 이 경우
@@ -94,7 +100,9 @@
 - EV-005: 평가 대상자는 확정된 본인 평가만 열람한다. 대상자가 인사관리자여도 같다(확정 전 본인
   평가는 상세 404, 목록 제외). 이력(반려·제외 사유 포함)은 현재 평가자와 인사관리자만 조회할 수
   있으며 평가 대상자 본인은 확정 후에도 조회할 수 없다.
-- 권한 밖 평가는 존재 여부를 숨기기 위해 404로 응답한다. 평가 작성 요청은 평가 권한을 대상자
+- 권한 밖 평가는 존재 여부를 숨기기 위해 404로 응답한다. 인사관리자 전용 동작(반려·재배정·
+  제외·확정 등)도 대상자 본인에게 보이지 않는 평가는 404로 응답해, 인사관리자인 대상자가 확정 전
+  본인 평가의 존재를 알아낼 수 없다(EV-005). 평가 작성 요청은 평가 권한을 대상자
   존재·재직 여부보다 먼저 확인해, 권한 없는 사원에게 대상자 상태·역할을 드러내지 않는다(HR-001).
 - 모든 상태 변경은 요청 시점에 권한과 상태를 다시 확인한다. 저장은 불러온 시점의 상태·평가자가
   그대로일 때만 반영하고, 그사이 다른 사용자가 상태를 바꾸거나 재배정했으면 409
@@ -128,7 +136,8 @@
   | `POST` | `/api/evaluations/<eval_id>/submit/` | 제출 | 현재 평가자 |
   | `GET` | `/api/evaluations/<eval_id>/history/` | 이력 | 현재 평가자, 인사관리자 |
   | `POST` | `/api/evaluations/<eval_id>/return/` | 반려 `{reason}` | 인사관리자 |
-  | `POST` | `/api/evaluations/<eval_id>/reassign/` | 평가자 재배정 `{evaluator_no, reason}`; 새 평가자는 재직 중이고 인사관리자가 아니어야 함 | 인사관리자 |
+  | `GET` | `/api/evaluations/evaluator-candidates/` | 재배정 후보(재직 중인 현재 부서장, 인사관리자 제외) `[{emp_no, name, dept_no, dept_name}]` | 인사관리자 |
+  | `POST` | `/api/evaluations/<eval_id>/reassign/` | 평가자 재배정 `{evaluator_no, reason}`; 새 평가자는 재직 중인 현재 부서장이고 인사관리자가 아니어야 함 | 인사관리자 |
   | `POST` | `/api/evaluations/<eval_id>/confirm/` | 확정 | 인사관리자(작성 관여자 제외) |
   | `POST` | `/api/evaluations/<eval_id>/cancel-confirmation/` | 확정 취소 `{reason}` → `반려` | 인사관리자 |
   | `POST` | `/api/evaluations/<eval_id>/exclude/` | 평가 제외 `{reason}` | 인사관리자 |
@@ -142,7 +151,8 @@
   `REASSIGN`/`CONFIRM`/`CANCEL_CONFIRMATION`/`EXCLUDE`/`CANCEL_EXCLUSION`), `from_status`,
   `to_status`, `actor_no`, `actor_name`, `from_evaluator_no`, `to_evaluator_no`, `score`, `reason`, `changed_at`.
   오류는 `{code, detail}` 형식이며 400(입력·`eval_year_not_allowed`), 403(`permission_denied`,
-  `self_evaluation_not_allowed`, `hr_manager_cannot_evaluate`, `confirmation_not_allowed`,
+  `self_evaluation_not_allowed`, `hr_manager_cannot_evaluate`, `evaluator_must_be_department_head`,
+  `confirmation_not_allowed`,
   `inactive_employee`), 404(없음·열람
   권한 없음), 409(`duplicate_evaluation`, `invalid_evaluation_state`, `evaluation_conflict`).
 - 스키마·migration 변경:
@@ -160,19 +170,27 @@
     - `eval_status` 허용 값 확장(`작성중`/`제출`/`반려`/`확정`/`제외`, CHECK 제약은 만들지 않음)
   - 적용 전 확인(읽기 전용): `evaluations`에 `(emp_no, eval_year)` 중복 행이 없는지, 기존 행의
     `eval_status`·`grade`·`score` 값이 위 도메인 값에 맞는지. 맞지 않는 행이 있으면 목록 조회가 실패한다.
+- 프론트엔드: `frontend/src/components/EvaluationPanel.tsx`, `src/api/evaluation.ts`,
+  `src/types/evaluation.ts`를 추가하고 `App.tsx` 업무 모듈 탭에 "인사평가"를 추가했다(세션 인증
+  모드). 부서장은 평가 작성·수정·제출, 인사관리자는 반려·확정·확정 취소·제외·제외 취소와 후보
+  목록에서 부서장을 골라 사유와 함께 재배정한다. 처리 이력을 상세 화면에 표시한다. 버튼 노출은
+  안내용이며 권한·상태 판단은 백엔드가 한다. 작성 대상 목록은 사원·부서 API로 계산한 소속 부서원과
+  하위 부서장이다.
 - 환경변수·인프라 영향: 없음. `config/settings/base.py`의 `INSTALLED_APPS`, `config/urls.py`,
   `config/settings/test.py`의 `MIGRATION_MODULES`에 `evaluation`을 추가했다.
 
 ## 검증
 
 - 실행한 테스트 (`backend/`):
-  - `uv run pytest` — 185 passed (`test_evaluation_domain.py` 59건, `test_evaluation_service.py`
-    38건, `test_evaluation_api.py` 24건, 계층 의존성 검사 포함)
+  - `uv run pytest` — 191 passed (`test_evaluation_domain.py` 59건, `test_evaluation_service.py`
+    42건, `test_evaluation_api.py` 26건, 계층 의존성 검사 포함)
   - `uv run ruff check .` — 통과
   - `uv run python manage.py check` — 이상 없음
   - `uv run python manage.py makemigrations --check --dry-run` — No changes detected
+- 실행한 검증 (`frontend/`): `bun run lint`, `bun run build` — 통과
 - 남은 검증: 실제 공유 DB `evaluations` 스키마·데이터 읽기 전용 대조, 병합 시 `0002` 적용 결과,
-  프론트엔드 연동.
+  브라우저에서의 화면 동작 확인. 화면은 DB·Redis가 모두 연결되어야 활성화되는데 로컬에 대체
+  환경이 없고 공유 DB에 테스트 데이터를 쓸 수 없어 이번 작업에서는 브라우저로 확인하지 않았다.
 
 ## 공용 문서 반영 후보
 

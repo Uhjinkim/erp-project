@@ -13,8 +13,10 @@ from evaluation.domain.entities import (
     EVALUATOR_PERMISSION_MESSAGE,
     Evaluation,
     EvaluationHistory,
+    EvaluatorCandidate,
     creation_history,
     ensure_can_evaluate,
+    ensure_eligible_evaluator,
     ensure_not_hr_manager_evaluator,
     restorable_status,
 )
@@ -109,7 +111,10 @@ class EvaluationService:
             # Checked only after the caller is known to be an HR manager.
             if not self.workforce.is_active_employee(command.new_evaluator_no):
                 raise InactiveEmployeeError("재직 중인 사원만 평가자로 지정할 수 있습니다.")
-            ensure_not_hr_manager_evaluator(self.workforce.is_hr_manager(command.new_evaluator_no))
+            ensure_eligible_evaluator(
+                self.workforce.is_department_head(command.new_evaluator_no),
+                self.workforce.is_hr_manager(command.new_evaluator_no),
+            )
             return evaluation.reassign(
                 command.actor_no, command.new_evaluator_no, command.reason, now
             )
@@ -149,6 +154,13 @@ class EvaluationService:
                 actor_no, restorable_status(histories), reason, now
             ),
         )
+
+    def evaluator_candidates(self, actor_no: int) -> list[EvaluatorCandidate]:
+        """Who an HR manager may pick when reassigning (FN-EV-001)."""
+        self._ensure_active(actor_no)
+        if not self.workforce.is_hr_manager(actor_no):
+            raise EvaluationPermissionError("인사관리자만 처리할 수 있습니다.")
+        return self.workforce.evaluator_candidates()
 
     # Queries -------------------------------------------------------------------------
 
@@ -193,8 +205,12 @@ class EvaluationService:
         is_hr = self.workforce.is_hr_manager(actor_no)
         with self.unit_of_work_factory() as uow:
             evaluation = self._get_visible(uow, eval_id, actor_no, is_hr)
-            # An evaluator who later received the HR manager role must be reassigned first.
-            ensure_not_hr_manager_evaluator(is_hr)
+            if actor_no == evaluation.evaluator_no:
+                # Re-checked on every save: an evaluator who lost the head post or received
+                # the HR manager role must be reassigned first.
+                ensure_eligible_evaluator(self.workforce.is_department_head(actor_no), is_hr)
+            else:
+                ensure_not_hr_manager_evaluator(is_hr)
             expected = replace(evaluation)
             history = apply(evaluation, self.clock())
             return self._save(uow, evaluation, expected, history)
@@ -210,6 +226,9 @@ class EvaluationService:
             raise EvaluationPermissionError("인사관리자만 처리할 수 있습니다.")
         with self.unit_of_work_factory() as uow:
             evaluation = uow.evaluations.get(eval_id)
+            if not evaluation.is_visible_to(actor_no, viewer_is_hr_manager=True):
+                # EV-005: an HR manager's own unconfirmed evaluation does not exist for them.
+                raise EvaluationNotFoundError("평가를 찾을 수 없습니다.")
             expected = replace(evaluation)
             history = apply(evaluation, uow.histories.list_for(eval_id), self.clock())
             return self._save(uow, evaluation, expected, history)

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from evaluation.domain.entities import Evaluation, EvaluationHistory
+from evaluation.domain.entities import Evaluation, EvaluationHistory, EvaluatorCandidate
 
 
 @dataclass(frozen=True)
@@ -64,4 +64,13 @@ def history_to_dict(entry: EvaluationHistory) -> dict[str, object]:
         "score": f"{entry.score:.2f}" if entry.score is not None else None,
         "reason": entry.reason,
         "changed_at": entry.changed_at,
+    }
+
+
+def candidate_to_dict(candidate: EvaluatorCandidate) -> dict[str, object]:
+    return {
+        "emp_no": candidate.employee_no,
+        "name": candidate.name,
+        "dept_no": candidate.department_no,
+        "dept_name": candidate.department_name,
     }
