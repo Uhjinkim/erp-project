@@ -15,4 +15,4 @@
   `docs/specs/notion/05-open-policies.md`,
   `docs/specs/notion/workforce-implementation-map.md`
 - 대상 앱: `backend/workforce/` (DDD 계층 구조는 `backend/vacation/`을 표준으로 따름)
-- 작업 보고서: `docs/reports/2026-09-22_사원_본인정보_조회_모듈화_작업_보고서.md`
+- 작업 보고서: `docs/contributions/workforce/feature-workforce-employee-info/2026-09-22_사원_본인정보_조회_모듈화_작업_보고서.md`

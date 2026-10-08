@@ -137,3 +137,11 @@
     상세 응답 필드, 개인정보 변경 요청 API 추가
   - `docs/specs/notion/workforce-implementation-map.md`: `FN-HR-001`~`FN-HR-005`, `FN-HR-011`
     구현 완료 표시와 `FN-HR-001` 급여계좌 포함 여부 정리
+    - 이전에 이 브랜치에서 직접 추가했다가 기여 문서로 옮긴 제안(2026-09-22 작성):
+      `FN-HR-001` 본인 정보 조회는 로그인한 사원 본인의 인사정보(부서·직급·연락처·주소·급여계좌·
+      입퇴사일 포함)를 반환하고 다른 사원 조회는 막는다. 조회 로직은 `accounts`가 아니라 `workforce`에
+      둔다: `domain.policies.EmployeeProfile` → `application.services.get_employee_profile` →
+      `infrastructure.gateways.DjangoWorkforceQueryGateway.employee_profile`. `accounts/serializers.py`는
+      이 유스케이스만 호출한다. 점검일을 2026-09-22로 갱신.
+  - 작업 보고서: 이 브랜치의 `2026-09-22_사원_본인정보_조회_모듈화_작업_보고서.md`(이 폴더)를 문서
+    담당자가 검토해 `docs/reports/`로 옮길지 결정
