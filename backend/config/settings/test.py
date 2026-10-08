@@ -31,4 +31,5 @@ MIGRATION_MODULES = {
     "workforce": None,
     "payroll": None,
     "board": None,
+    "evaluation": None,
 }
