@@ -3,12 +3,18 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
-from evaluation.domain.exceptions import EvaluationYearNotAllowedError, InvalidEvaluationError
+from evaluation.domain.exceptions import (
+    EvaluationYearNotAllowedError,
+    InsufficientTenureError,
+    InvalidEvaluationError,
+)
 
 MIN_SCORE = Decimal("0")
 MAX_SCORE = Decimal("100")
 SCORE_DECIMAL_PLACES = 2
 REASON_MAX_LENGTH = 255
+# Employees with this many months of service or fewer are not evaluated.
+MINIMUM_TENURE_MONTHS = 3
 
 
 class Grade(StrEnum):
@@ -85,6 +91,27 @@ def evaluation_basis_date(eval_year: str, today: date) -> date:
     """
     EvaluationYear(eval_year)
     return min(date(int(eval_year), 12, 31), today)
+
+
+def add_months(value: date, months: int) -> date:
+    """Same day `months` later, clamped to the end of shorter months (e.g. 11/30 + 3 -> 2/28)."""
+    month_index = value.month - 1 + months
+    year, month = value.year + month_index // 12, month_index % 12 + 1
+    next_month = date(year + month // 12, month % 12 + 1, 1)
+    last_day = (next_month - date.resolution).day
+    return date(year, month, min(value.day, last_day))
+
+
+def ensure_minimum_tenure(hire_date: date, basis_date: date) -> None:
+    """3개월 이하 근무자는 평가 대상이 아니다 (사용자 확인, 2026-10-08).
+
+    Tenure is measured up to the evaluation basis date (연말 기준), so someone hired
+    on 30 September has exactly three months on 30 December and is not evaluated.
+    """
+    if add_months(hire_date, MINIMUM_TENURE_MONTHS) >= basis_date:
+        raise InsufficientTenureError(
+            f"근무 기간이 {MINIMUM_TENURE_MONTHS}개월 이하인 사원은 평가 대상이 아닙니다."
+        )
 
 
 @dataclass(frozen=True)

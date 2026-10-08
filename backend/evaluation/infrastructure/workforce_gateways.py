@@ -33,7 +33,6 @@ class DjangoWorkforceGateway(WorkforceGateway):
             )
             for department in departments
             if department.head.is_active_employee
-            and not self.is_hr_manager(department.head.employee_no)
         ]
 
     def evaluation_target(self, employee_no: int, as_of: date) -> EvaluationTarget | None:
@@ -53,6 +52,7 @@ class DjangoWorkforceGateway(WorkforceGateway):
             # 휴직자 remain evaluable; only 퇴사 removes an employee from new evaluations.
             is_employed=employee.tenure_status != Employee.TenureStatus.TERMINATED
             and employee.term_date is None,
+            hire_date=employee.hire_date,
             department_no=department_no,
             position_code=position_code,
             # Department heads have no history, so these are the departments' current heads.

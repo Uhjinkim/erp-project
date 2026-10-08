@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -7,7 +7,6 @@ from evaluation.domain.exceptions import (
     ConfirmationNotAllowedError,
     EvaluationPermissionError,
     EvaluationStateError,
-    HRManagerEvaluatorError,
     InvalidEvaluationError,
     NotDepartmentHeadError,
     SelfEvaluationError,
@@ -62,6 +61,8 @@ class EvaluationTarget:
     position_code: str | None
     department_head_no: int | None
     parent_department_head_no: int | None = None
+    # Always set by the workforce gateway; None only skips the tenure rule in tests.
+    hire_date: date | None = None
 
     @property
     def is_department_head(self) -> bool:
@@ -78,24 +79,14 @@ class EvaluationTarget:
 EVALUATOR_PERMISSION_MESSAGE = "해당 사원을 평가할 권한이 없습니다."
 
 
-def ensure_not_hr_manager_evaluator(is_hr_manager: bool) -> None:
-    """FN-EV-001: department heads write evaluations; HR managers never act as evaluators.
+def ensure_eligible_evaluator(is_department_head: bool) -> None:
+    """FN-EV-001: an evaluator is always a current department head.
 
-    Keeps writing (평가자) and HR handling (재배정·반려·확정) in different hands.
-    """
-    if is_hr_manager:
-        raise HRManagerEvaluatorError(
-            "인사관리자는 평가자가 될 수 없습니다. 인사관리자가 아닌 평가자로 재배정해야 합니다."
-        )
-
-
-def ensure_eligible_evaluator(is_department_head: bool, is_hr_manager: bool) -> None:
-    """FN-EV-001: an evaluator is always a current department head who is not an HR manager.
-
+    A department head who is also an HR manager may evaluate; another HR manager then
+    confirms, because the current evaluator can never confirm (사용자 확인, 2026-10-08).
     Applied when assigning an evaluator and again whenever the evaluator edits or submits,
     so someone who has lost the head post must be replaced by an HR reassignment first.
     """
-    ensure_not_hr_manager_evaluator(is_hr_manager)
     if not is_department_head:
         raise NotDepartmentHeadError(
             "평가자는 현재 부서장이어야 합니다. 인사관리자가 부서장으로 재배정해야 합니다."

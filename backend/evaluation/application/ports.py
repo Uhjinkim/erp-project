@@ -21,4 +21,4 @@ class WorkforceGateway(ABC):
 
     @abstractmethod
     def evaluator_candidates(self) -> list[EvaluatorCandidate]:
-        """Active current department heads who are not HR managers, one row per department."""
+        """Active current department heads (HR managers included), one row per department."""

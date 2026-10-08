@@ -44,6 +44,28 @@ const ACTION_LABELS: Record<EvaluationAction, string> = {
 
 const EDITABLE = ["작성중", "반려"]
 const UNCONFIRMED = ["작성중", "제출", "반려"]
+const MINIMUM_TENURE_MONTHS = 3
+
+function isoDate(value: Date) {
+  const month = String(value.getMonth() + 1).padStart(2, "0")
+  const day = String(value.getDate()).padStart(2, "0")
+  return `${value.getFullYear()}-${month}-${day}`
+}
+
+// Mirrors the backend rule for the picker only: year end for past years, today for this year.
+function basisDate(year: string) {
+  const today = isoDate(new Date())
+  const yearEnd = `${year}-12-31`
+  return yearEnd < today ? yearEnd : today
+}
+
+function addMonths(isoValue: string, months: number) {
+  const [year, month, day] = isoValue.split("-").map(Number)
+  const target = new Date(year, month - 1 + months, 1)
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(day, lastDay))
+  return isoDate(target)
+}
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
@@ -167,10 +189,14 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
       .map((department) => employees.find((employee) => employee.emp_no === department.head_emp_no))
       .filter((employee): employee is EmployeeSummary => employee !== undefined)
     const unique = new Map([...members, ...childHeads].map((employee) => [employee.emp_no, employee]))
-    return [...unique.values()].filter((employee) => employee.tenure_status !== "퇴사")
-  }, [departments, employees, myNo])
+    const basis = basisDate(createForm.eval_year)
+    return [...unique.values()].filter((employee) => employee.tenure_status !== "퇴사"
+      // 3개월 이하 근무자는 평가 대상이 아니다.
+      && addMonths(employee.hire_date, MINIMUM_TENURE_MONTHS) < basis)
+  }, [createForm.eval_year, departments, employees, myNo])
 
-  const isEvaluator = selected !== null && selected.evaluator_no === myNo && !isHRManager
+  // A department head who is also an HR manager evaluates; another HR manager confirms.
+  const isEvaluator = selected !== null && selected.evaluator_no === myNo
   const canHandleAsHR = selected !== null && isHRManager && selected.emp_no !== myNo
   const reassignOptions = candidates.filter(
     (candidate) => selected !== null
@@ -197,7 +223,7 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
 
       <div className="workspace">
         <div className="evaluation-side">
-          {!isHRManager && evaluableEmployees.length > 0 && (
+          {evaluableEmployees.length > 0 && (
             <form className="request-card" onSubmit={submitCreate}>
               <div className="section-heading"><div><p className="step">01</p><h2>평가 작성</h2></div></div>
               <label>
@@ -226,12 +252,12 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
                 <textarea rows={4} value={createForm.comments} onChange={(event) => setCreateForm({ ...createForm, comments: event.target.value })} />
               </label>
               <button className="primary" disabled={loading || !enabled} type="submit">작성중으로 저장</button>
-              <p className="helper">등급은 점수로 자동 계산됩니다. S 90점 이상, A 80점 이상, B 70점 이상, C 70점 미만.</p>
+              <p className="helper">등급은 점수로 자동 계산됩니다. S 90점 이상, A 80점 이상, B 70점 이상, C 70점 미만. 근무 3개월 이하 사원은 목록에 나오지 않습니다.</p>
             </form>
           )}
 
           <section className="list-panel">
-            <div className="section-heading"><div><p className="step">{isHRManager ? "01" : "02"}</p><h2>평가 목록</h2></div></div>
+            <div className="section-heading"><div><p className="step">{evaluableEmployees.length > 0 ? "02" : "01"}</p><h2>평가 목록</h2></div></div>
             <div className="request-list evaluation-list">
               {evaluations.length === 0 && <div className="empty">{enabled ? "표시할 평가가 없습니다." : "서버 연결 후 평가를 불러옵니다."}</div>}
               {evaluations.map((item) => (
@@ -303,7 +329,9 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
                     {selected.eval_status === "제출" && (
                       <>
                         <button type="button" disabled={loading} onClick={() => requireReason((text) => returnEvaluation(selected.eval_id, text), "평가를 반려했습니다.")}>반려</button>
-                        <button className="accent" type="button" disabled={loading} onClick={() => void run(() => confirmEvaluation(selected.eval_id), "평가를 확정했습니다.")}>확정</button>
+                        {selected.evaluator_no !== myNo && (
+                          <button className="accent" type="button" disabled={loading} onClick={() => void run(() => confirmEvaluation(selected.eval_id), "평가를 확정했습니다.")}>확정</button>
+                        )}
                       </>
                     )}
                     {selected.eval_status === "확정" && (
@@ -337,7 +365,7 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
                         </select>
                       </label>
                       <button className="primary" type="submit" disabled={loading || !newEvaluatorNo}>평가자 재배정</button>
-                      <p className="helper">재직 중이고 인사관리자가 아닌 현재 부서장만 지정할 수 있습니다. 제출된 평가는 작성중으로 돌아가 새 평가자가 확인 후 다시 제출합니다.</p>
+                      <p className="helper">재직 중인 현재 부서장만 지정할 수 있습니다. 제출된 평가는 작성중으로 돌아가 새 평가자가 확인 후 다시 제출합니다.</p>
                     </form>
                   )}
                 </div>

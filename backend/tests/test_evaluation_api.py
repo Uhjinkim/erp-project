@@ -371,31 +371,34 @@ def test_former_evaluator_who_became_hr_manager_cannot_confirm(org) -> None:
 
 
 @pytest.mark.django_db
-def test_fn_ev_001_hr_manager_is_never_an_evaluator(org) -> None:
+def test_hr_manager_department_head_evaluates_and_another_hr_confirms(org) -> None:
+    """인사관리자+부서장은 평가하고, 확정은 다른 인사관리자가 한다 (2026-10-08)."""
     hr = client_for(org["hr"])
     hr_2 = create_employee(9002, "hr2@example.com")
     make_hr_manager(hr_2)
-
-    # An HR manager who heads the department cannot write the evaluation.
     department = org["member"].department
     department.head = org["hr"]
     department.save(update_fields=["head"])
-    blocked = create_evaluation(hr)
-    assert blocked.status_code == 403
-    assert blocked.data["code"] == "hr_manager_cannot_evaluate"
 
-    department.head = org["head"]
-    department.save(update_fields=["head"])
-    eval_id = create_evaluation(client_for(org["head"])).data["eval_id"]
-    for evaluator_no in (9001, 9002):
-        response = hr.post(
-            f"/api/evaluations/{eval_id}/reassign/",
-            {"evaluator_no": evaluator_no, "reason": "사유"},
-            format="json",
-        )
-        assert response.status_code == 403
-        assert response.data["code"] == "hr_manager_cannot_evaluate"
-    assert EvaluationModel.objects.get(eval_id=eval_id).evaluator_id == 2001
+    created = create_evaluation(hr)
+    assert created.status_code == 201, created.data
+    eval_id = created.data["eval_id"]
+    assert hr.post(f"/api/evaluations/{eval_id}/submit/").status_code == 200
+
+    own = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    assert own.status_code == 403
+    assert own.data["code"] == "confirmation_not_allowed"
+    assert client_for(hr_2).post(f"/api/evaluations/{eval_id}/confirm/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_employee_with_three_months_or_less_is_not_evaluated(org) -> None:
+    create_employee(1009, "newbie@example.com", department=org["member"].department)
+    Employee.objects.filter(employee_no=1009).update(hire_date=timezone.localdate())
+
+    response = create_evaluation(client_for(org["head"]), emp_no=1009)
+    assert response.status_code == 400
+    assert response.data["code"] == "insufficient_tenure"
 
 
 @pytest.mark.django_db

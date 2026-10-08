@@ -27,8 +27,8 @@ from evaluation.domain.exceptions import (
     EvaluationPermissionError,
     EvaluationStateError,
     EvaluationYearNotAllowedError,
-    HRManagerEvaluatorError,
     InactiveEmployeeError,
+    InsufficientTenureError,
     NotDepartmentHeadError,
     SelfEvaluationError,
 )
@@ -148,7 +148,7 @@ class FakeWorkforce(WorkforceGateway):
         return [
             EvaluatorCandidate(no, f"부서장 {no}", no, f"부서 {no}")
             for no in sorted(self.heads)
-            if self.is_active_employee(no) and not self.is_hr_manager(no)
+            if self.is_active_employee(no)
         ]
 
     def evaluation_target(self, employee_no: int, as_of: date) -> EvaluationTarget | None:
@@ -426,37 +426,80 @@ def test_former_evaluator_who_became_hr_manager_cannot_confirm(
     assert service.confirm_evaluation(eval_id, HR_2).status == EvaluationStatus.CONFIRMED
 
 
-def test_fn_ev_001_hr_manager_department_head_cannot_write(
+def test_hr_manager_department_head_evaluates_and_another_hr_confirms(
     service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
+    """인사관리자+부서장은 평가자가 되고, 확정은 다른 인사관리자가 한다 (2026-10-08)."""
+    workforce.heads.add(HR)
     workforce.targets[MEMBER] = EvaluationTarget(MEMBER, True, 10, "STAFF", HR)
-    with pytest.raises(HRManagerEvaluatorError):
-        create(service, evaluator=HR)
+    eval_id = create(service, evaluator=HR).eval_id or 0
+    service.revise_evaluation(ReviseEvaluationCommand(eval_id, HR, Decimal("88")))
+    service.submit_evaluation(eval_id, HR)
+
+    with pytest.raises(ConfirmationNotAllowedError):
+        service.confirm_evaluation(eval_id, HR)
+    assert service.confirm_evaluation(eval_id, HR_2).confirmed_by == HR_2
 
 
-@pytest.mark.parametrize("new_evaluator", [HR, HR_2])
-def test_fn_ev_001_hr_manager_cannot_be_assigned_as_evaluator(
-    service: EvaluationService, uow: FakeUnitOfWork, new_evaluator: int
+def test_hr_manager_department_head_can_be_reassignment_target(
+    service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
+    workforce.heads.add(HR_2)
     eval_id = create(service).eval_id or 0
-    with pytest.raises(HRManagerEvaluatorError):
-        service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, new_evaluator, "사유"))
-    assert uow.evaluations.get(eval_id).evaluator_no == HEAD
+    reassigned = service.reassign_evaluation(
+        ReassignEvaluationCommand(eval_id, HR, HR_2, "부서장 교체")
+    )
+    assert reassigned.evaluator_no == HR_2
 
 
-def test_evaluator_who_became_hr_manager_must_be_reassigned(
+def test_evaluator_who_became_hr_manager_keeps_writing_but_cannot_confirm(
     service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
     eval_id = create(service).eval_id or 0
     workforce.hr_managers.add(HEAD)
 
-    with pytest.raises(HRManagerEvaluatorError):
-        service.revise_evaluation(ReviseEvaluationCommand(eval_id, HEAD, Decimal("70")))
-    with pytest.raises(HRManagerEvaluatorError):
-        service.submit_evaluation(eval_id, HEAD)
+    service.revise_evaluation(ReviseEvaluationCommand(eval_id, HEAD, Decimal("70")))
+    service.submit_evaluation(eval_id, HEAD)
+    with pytest.raises(ConfirmationNotAllowedError):
+        service.confirm_evaluation(eval_id, HEAD)
+    assert service.confirm_evaluation(eval_id, HR).status == EvaluationStatus.CONFIRMED
 
-    service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, NEW_HEAD, "역할 변경"))
-    service.revise_evaluation(ReviseEvaluationCommand(eval_id, NEW_HEAD, Decimal("70")))
+
+@pytest.mark.parametrize(
+    ("year", "hire_date", "allowed"),
+    [
+        # Current year: tenure counted up to today (2026-10-06).
+        ("2026", date(2026, 7, 5), True),  # 3 months and 1 day
+        ("2026", date(2026, 7, 6), False),  # exactly 3 months
+        ("2026", date(2026, 9, 22), False),  # about two weeks
+        # Previous year: tenure counted up to 2025-12-31.
+        ("2025", date(2025, 9, 30), True),
+        ("2025", date(2025, 10, 1), False),
+        ("2025", date(2026, 1, 1), False),  # hired after the evaluated year
+    ],
+)
+def test_employees_with_three_months_or_less_are_not_evaluated(
+    service: EvaluationService,
+    workforce: FakeWorkforce,
+    year: str,
+    hire_date: date,
+    allowed: bool,
+) -> None:
+    workforce.targets[MEMBER] = replace(workforce.targets[MEMBER], hire_date=hire_date)
+    if allowed:
+        assert create(service, year=year).employee_no == MEMBER
+    else:
+        with pytest.raises(InsufficientTenureError):
+            create(service, year=year)
+
+
+def test_tenure_is_checked_after_authority(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    """An outsider learns nothing about the target's hire date (HR-001)."""
+    workforce.targets[MEMBER] = replace(workforce.targets[MEMBER], hire_date=TODAY)
+    with pytest.raises(EvaluationPermissionError):
+        create(service, evaluator=OTHER)
 
 
 def test_fn_ev_001_reassignment_target_must_be_department_head(
@@ -486,9 +529,9 @@ def test_evaluator_who_lost_head_post_must_be_reassigned(
 def test_evaluator_candidates_are_for_hr_only(
     service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
-    workforce.heads.add(HR)  # an HR manager who heads a department is not a candidate
+    workforce.heads.add(HR_2)  # an HR manager who heads a department is a candidate
     candidates = service.evaluator_candidates(HR)
-    assert [item.employee_no for item in candidates] == [HEAD, NEW_HEAD, PARENT_HEAD]
+    assert [item.employee_no for item in candidates] == [HEAD, NEW_HEAD, PARENT_HEAD, HR_2]
     with pytest.raises(EvaluationPermissionError):
         service.evaluator_candidates(HEAD)
 

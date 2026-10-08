@@ -20,6 +20,7 @@ from evaluation.domain.exceptions import (
     EvaluationPermissionError,
     EvaluationStateError,
     EvaluationYearNotAllowedError,
+    InsufficientTenureError,
     InvalidEvaluationError,
     SelfEvaluationError,
 )
@@ -28,7 +29,9 @@ from evaluation.domain.value_objects import (
     EvaluationYear,
     Grade,
     Reason,
+    add_months,
     ensure_creatable_year,
+    ensure_minimum_tenure,
     evaluation_basis_date,
 )
 
@@ -113,6 +116,25 @@ def test_basis_date_is_year_end_for_past_years_and_today_for_current_year() -> N
     today = date(2026, 10, 7)
     assert evaluation_basis_date("2025", today) == date(2025, 12, 31)
     assert evaluation_basis_date("2026", today) == today
+
+
+@pytest.mark.parametrize(
+    ("start", "expected"),
+    [
+        (date(2026, 9, 22), date(2026, 12, 22)),
+        (date(2025, 11, 30), date(2026, 2, 28)),
+        (date(2023, 11, 30), date(2024, 2, 29)),
+        (date(2026, 10, 31), date(2027, 1, 31)),
+    ],
+)
+def test_add_months_clamps_to_month_end(start: date, expected: date) -> None:
+    assert add_months(start, 3) == expected
+
+
+def test_minimum_tenure_requires_more_than_three_months() -> None:
+    ensure_minimum_tenure(date(2025, 9, 30), date(2025, 12, 31))
+    with pytest.raises(InsufficientTenureError):
+        ensure_minimum_tenure(date(2025, 9, 30), date(2025, 12, 30))  # exactly 3 months
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "x" * 256])
