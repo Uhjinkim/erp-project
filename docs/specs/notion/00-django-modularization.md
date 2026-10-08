@@ -1,4 +1,4 @@
-# Django 모듈화 전략: DDD + 클린 아키텍처
+# 00. Django 모듈화 전략: DDD + 클린 아키텍처
 
 - Notion 원문: <https://app.notion.com/p/3da8eced448d81519b49f8d1edf23eda>
 - 원문 최종 수정: 2026-09-13

@@ -2,8 +2,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 
 import { getCurrentUser, loginWithEmail, logoutSession } from "./api/auth"
 import { ApiError, requestJson } from "./api/client"
+import { BoardPanel } from "./components/BoardPanel"
 import { ConnectionStatus } from "./components/ConnectionStatus"
+import { EvaluationPanel } from "./components/EvaluationPanel"
 import { LoginPanel } from "./components/LoginPanel"
+import { PayrollPanel } from "./components/PayrollPanel"
 import { WorkforcePanel } from "./components/WorkforcePanel"
 import { environment } from "./config/environment"
 import type { CurrentUser } from "./types/auth"
@@ -45,7 +48,9 @@ function VacationApp({ currentUser, onSessionExpired, onLogout }: VacationAppPro
   const [mine, setMine] = useState<VacationRequest[]>([])
   const [approvals, setApprovals] = useState<VacationRequest[]>([])
   const [tab, setTab] = useState<"mine" | "approvals">("mine")
-  const [module, setModule] = useState<"vacation" | "workforce">("vacation")
+  const [module, setModule] = useState<
+    "vacation" | "board" | "workforce" | "payroll" | "evaluation"
+  >("vacation")
   const [form, setForm] = useState(initialForm)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [message, setMessage] = useState("")
@@ -198,7 +203,10 @@ function VacationApp({ currentUser, onSessionExpired, onLogout }: VacationAppPro
       {!developmentIdentity && (
         <nav className="module-nav" aria-label="업무 모듈">
           <button className={module === "vacation" ? "active" : ""} type="button" onClick={() => setModule("vacation")}>휴가</button>
+          <button className={module === "board" ? "active" : ""} type="button" onClick={() => setModule("board")}>게시판</button>
           <button className={module === "workforce" ? "active" : ""} type="button" onClick={() => setModule("workforce")}>사원·부서</button>
+          <button className={module === "payroll" ? "active" : ""} type="button" onClick={() => setModule("payroll")}>급여</button>
+          <button className={module === "evaluation" ? "active" : ""} type="button" onClick={() => setModule("evaluation")}>인사평가</button>
         </nav>
       )}
       {message && <div className="notice" role="status">{message}</div>}
@@ -235,8 +243,17 @@ function VacationApp({ currentUser, onSessionExpired, onLogout }: VacationAppPro
           </div>
         </section>
       </section>}
+      {module === "board" && currentUser && (
+        <BoardPanel enabled={connected} currentUser={currentUser} />
+      )}
       {module === "workforce" && currentUser && (
         <WorkforcePanel enabled={connected} currentUser={currentUser} />
+      )}
+      {module === "payroll" && currentUser && (
+        <PayrollPanel enabled={connected} currentUser={currentUser} />
+      )}
+      {module === "evaluation" && currentUser && (
+        <EvaluationPanel enabled={connected} currentUser={currentUser} />
       )}
     </main>
   )

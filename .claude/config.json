@@ -1,0 +1,9 @@
+{
+  "mcp_servers": {
+    "notion": {
+      "url": "https://mcp.notion.com/mcp",
+      "auth_type": "oauth",
+      "default_tools_approval_mode": "writes"
+    }
+  }
+}

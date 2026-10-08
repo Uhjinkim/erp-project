@@ -76,7 +76,7 @@ function Stop-ProcessTree {
 
 Assert-Command -Name "uv" -InstallationHint "Install uv before starting the backend."
 Assert-Command -Name "bun" -InstallationHint "Install Bun before starting the frontend."
-Assert-Command -Name "nginx" -InstallationHint "Install nginx and add nginx.exe to PATH."
+Assert-Command -Name "nginx" -InstallationHint "Install nginx with 'winget install nginxinc.nginx', then open a new PowerShell session."
 
 $nginxPort = ConvertTo-ValidatedPort -Name "ERP_DEV_NGINX_PORT" -Value $nginxPort
 $backendPort = ConvertTo-ValidatedPort -Name "ERP_DEV_BACKEND_PORT" -Value $backendPort
@@ -103,8 +103,8 @@ if (-not (Test-Path -LiteralPath $backendEnvFile -PathType Leaf)) {
 
 $runtimeDir = Join-Path ([System.IO.Path]::GetTempPath()) ("erp-nginx-dev-" + [guid]::NewGuid().ToString("N"))
 $null = New-Item -ItemType Directory -Path $runtimeDir
-foreach ($tempName in @("client_body_temp", "proxy_temp", "fastcgi_temp", "uwsgi_temp", "scgi_temp")) {
-    $null = New-Item -ItemType Directory -Path (Join-Path $runtimeDir "temp\$tempName")
+foreach ($tempDir in @("temp/client_body_temp", "temp/proxy_temp", "temp/fastcgi_temp", "temp/scgi_temp", "temp/uwsgi_temp")) {
+    $null = New-Item -ItemType Directory -Path (Join-Path $runtimeDir $tempDir) -Force
 }
 $nginxConfig = Join-Path $runtimeDir "nginx.conf"
 $startupErrorLog = Join-Path $runtimeDir "startup-error.log"
@@ -113,6 +113,17 @@ $frontendProcess = $null
 $nginxProcess = $null
 
 try {
+    foreach ($directoryName in @(
+        "logs",
+        "client_body_temp",
+        "proxy_temp",
+        "fastcgi_temp",
+        "uwsgi_temp",
+        "scgi_temp"
+    )) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $runtimeDir $directoryName) -Force
+    }
+
     $config = [System.IO.File]::ReadAllText($nginxTemplate)
     $config = $config.Replace("__NGINX_PORT__", [string]$nginxPort)
     $config = $config.Replace("__BACKEND_PORT__", [string]$backendPort)
