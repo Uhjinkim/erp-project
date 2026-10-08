@@ -428,8 +428,15 @@ def test_hr_actions_hide_own_unconfirmed_evaluation(org) -> None:
     eval_id = create_evaluation(head, emp_no=9001).data["eval_id"]
     head.post(f"/api/evaluations/{eval_id}/submit/")
 
-    response = client_for(org["hr"]).post(f"/api/evaluations/{eval_id}/confirm/")
-    assert response.status_code == 404
+    hr = client_for(org["hr"])
+    # README: the target may not confirm -> 403 confirmation_not_allowed.
+    confirm = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    assert confirm.status_code == 403
+    assert confirm.data["code"] == "confirmation_not_allowed"
+    # README EV-005: the other HR actions keep the evaluation hidden.
+    returned = hr.post(f"/api/evaluations/{eval_id}/return/", {"reason": "사유"}, format="json")
+    assert returned.status_code == 404
+    assert EvaluationModel.objects.get(eval_id=eval_id).eval_status == "제출"
 
 
 @pytest.mark.django_db

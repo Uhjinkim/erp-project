@@ -496,12 +496,14 @@ def test_evaluator_candidates_are_for_hr_only(
 def test_hr_actions_on_own_unconfirmed_evaluation_look_missing(
     service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
-    """EV-005: an HR manager cannot detect their own unconfirmed evaluation via HR actions."""
+    """EV-005: an HR manager cannot detect their own unconfirmed evaluation via HR actions.
+
+    Confirmation is the README exception and answers confirmation_not_allowed instead.
+    """
     workforce.targets[HR] = EvaluationTarget(HR, True, 10, "STAFF", HEAD)
     eval_id = submitted(service, employee=HR)
 
     for action in (
-        lambda: service.confirm_evaluation(eval_id, HR),
         lambda: service.return_evaluation(eval_id, HR, "사유"),
         lambda: service.exclude_evaluation(eval_id, HR, "사유"),
         lambda: service.reassign_evaluation(
@@ -525,10 +527,11 @@ def test_non_hr_caller_learns_nothing_from_reassign(service: EvaluationService) 
 def test_hr_manager_cannot_confirm_own_evaluation(
     service: EvaluationService, workforce: FakeWorkforce
 ) -> None:
+    """README: the evaluated employee may not confirm -> confirmation_not_allowed (403)."""
     workforce.targets[HR] = EvaluationTarget(HR, True, 10, "STAFF", HEAD)
     eval_id = submitted(service, employee=HR)
 
-    with pytest.raises(EvaluationNotFoundError):
+    with pytest.raises(ConfirmationNotAllowedError):
         service.confirm_evaluation(eval_id, HR)
     assert service.confirm_evaluation(eval_id, HR_2).confirmed_by == HR_2
 

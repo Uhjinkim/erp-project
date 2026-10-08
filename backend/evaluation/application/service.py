@@ -128,7 +128,9 @@ class EvaluationService:
             authors = {entry.actor_no for entry in histories if entry.action in CONTENT_ACTIONS}
             return evaluation.confirm(actor_no, authors, now)
 
-        return self._hr_action(eval_id, actor_no, confirm)
+        # The target asking to confirm their own evaluation gets confirmation_not_allowed
+        # rather than the EV-005 404 used by the other HR actions.
+        return self._hr_action(eval_id, actor_no, confirm, hide_from_target=False)
 
     def cancel_confirmation(self, eval_id: int, actor_no: int, reason: str) -> Evaluation:
         return self._hr_action(
@@ -220,13 +222,17 @@ class EvaluationService:
         eval_id: int,
         actor_no: int,
         apply: Callable[[Evaluation, list[EvaluationHistory], datetime], EvaluationHistory],
+        *,
+        hide_from_target: bool = True,
     ) -> Evaluation:
         self._ensure_active(actor_no)
         if not self.workforce.is_hr_manager(actor_no):
             raise EvaluationPermissionError("인사관리자만 처리할 수 있습니다.")
         with self.unit_of_work_factory() as uow:
             evaluation = uow.evaluations.get(eval_id)
-            if not evaluation.is_visible_to(actor_no, viewer_is_hr_manager=True):
+            if hide_from_target and not evaluation.is_visible_to(
+                actor_no, viewer_is_hr_manager=True
+            ):
                 # EV-005: an HR manager's own unconfirmed evaluation does not exist for them.
                 raise EvaluationNotFoundError("평가를 찾을 수 없습니다.")
             expected = replace(evaluation)

@@ -1,5 +1,6 @@
 from django.db import models
 
+from evaluation.infrastructure.fields import TimestampField
 from workforce.infrastructure.models import Department, Employee, Position
 
 
@@ -112,7 +113,8 @@ class EvaluationHistoryModel(models.Model):
     )
     score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     reason = models.CharField(max_length=255, blank=True, default="")
-    changed_at = models.DateTimeField()
+    # README: changed_at timestamp (without time zone), like the other ERP tables.
+    changed_at = TimestampField()
 
     class Meta:
         db_table = "evaluation_history"
