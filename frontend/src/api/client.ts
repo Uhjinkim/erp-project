@@ -21,6 +21,17 @@ function csrfToken(): string | undefined {
     .join("=")
 }
 
+function extractErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined
+  const record = body as Record<string, unknown>
+  if (typeof record.detail === "string") return record.detail
+  const nonFieldErrors = record.non_field_errors
+  if (Array.isArray(nonFieldErrors) && typeof nonFieldErrors[0] === "string") {
+    return nonFieldErrors[0]
+  }
+  return undefined
+}
+
 export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), environment.apiTimeoutMs)
@@ -38,11 +49,11 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
       headers,
       signal: controller.signal,
     })
-    const body = await response.json().catch(() => null) as { detail?: string } | T | null
+    const body = await response.json().catch(() => null) as T | null
 
     if (!response.ok) {
-      const detail = body && typeof body === "object" && "detail" in body ? body.detail : undefined
-      throw new ApiError(detail ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
+      const message = extractErrorMessage(body)
+      throw new ApiError(message ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
     }
 
     return body as T

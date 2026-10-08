@@ -17,7 +17,17 @@ The `vacation` Django app follows the project's domain-module layout. Its `domai
 packages are framework-independent; Django ORM and temporary employee/balance adapters live under
 `infrastructure`, while DRF endpoints live under `presentation`.
 
-Run its fast tests without a database connection:
+## Payroll module
+
+The `payroll` Django app follows the same domain-module layout as `vacation` and `workforce`.
+Statement creation, item entry, confirmation, confirmation-cancellation and reconfirmation all run
+through `application/service.py` and are recorded to `PayrollHistory`. Only employees holding the
+`PAYROLL_MANAGER` role (seeded by `workforce/migrations/0003_payroll_manager_role.py`) can create or
+change statements; other employees can only read their own. `payroll` has no legacy table in the
+shared PostgreSQL database, so its migrations are ordinary `makemigrations` output rather than the
+state-only migrations used for `workforce`/`vacation`.
+
+Run the fast test suite without a database connection:
 
 ```bash
 uv run pytest -q
