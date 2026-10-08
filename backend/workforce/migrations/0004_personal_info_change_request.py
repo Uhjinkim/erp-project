@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("workforce", "0002_required_roles"),
+        ("workforce", "0003_payroll_manager_role"),
     ]
 
     operations = [

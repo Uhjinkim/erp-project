@@ -74,7 +74,7 @@
   - 업무 규칙 위반은 `400`과 `{"detail": "...", "field": "..."}`(`field`는 선택)
 - 스키마·migration 변경:
   - 신규 테이블 `personal_info_change_requests`
-    (`workforce/migrations/0003_personal_info_change_request.py`)
+    (`workforce/migrations/0004_personal_info_change_request.py`, dev의 `0003_payroll_manager_role` 다음)
   - 공유 DB에는 적용하지 않았다. 배포 전 Notion 테이블 정의와 테이블명·컬럼을 대조해야 한다.
 - 환경변수·인프라 영향: 없음
 - 프론트엔드 영향: 일반 사원은 사원 목록 API를 호출하지 않고 본인 정보, 개인정보 변경 화면,
@@ -118,6 +118,9 @@
 
 ## 미결정 사항
 
+- 사원 목록 API(`GET /api/workforce/employees/`) 인사관리자 전용 제한(`HR-001`)과 dev 병합 후의 평가·급여
+  화면 충돌: 평가(부서장)와 급여(`PAYROLL_MANAGER`) 화면이 전체 사원 목록을 불러오므로 인사관리자가 아니면
+  `403`으로 동작하지 않는다. 권한 확대, 공개용 간단 목록 분리, 모듈별 API 중 방향 결정 필요.
 - 상급자가 없을 때의 "임시 팀장" 처리자: 현재 데이터에 임시 팀장을 표현할 역할·필드가 없어
   superuser만 처리하도록 구현했다. 표현 방식(역할 코드 또는 부서 필드) 결정 필요.
 - 운영 원칙: 인사팀장에게 `HR_MANAGER` 역할을 부여한다. 역할이 없는 부서장은 처리자가 되지 않아

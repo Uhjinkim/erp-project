@@ -9,7 +9,8 @@ import type {
   PositionSummary,
 } from "../types/workforce"
 
-export async function loadWorkforce(includeEmployees: boolean) {
+// 사원 목록은 HR-001에 따라 인사관리자만 조회할 수 있다. 다른 모듈의 호출 방식은 결정 대기 중.
+export async function loadWorkforce(includeEmployees = true) {
   const [employees, departments, positions] = await Promise.all([
     includeEmployees
       ? requestJson<EmployeeSummary[]>("/api/workforce/employees/")
