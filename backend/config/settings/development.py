@@ -11,6 +11,15 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="unsafe-development-key")
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
 
+# The frontend (Vite) and nginx run on different ports than the backend, so a login
+# POST is a cross-origin request from Django's point of view unless these are trusted.
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+
 DEVELOPMENT_OFFLINE_MODE = env("DEVELOPMENT_OFFLINE_MODE")
 
 if DEVELOPMENT_OFFLINE_MODE:

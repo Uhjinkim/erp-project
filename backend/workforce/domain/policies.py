@@ -8,6 +8,27 @@ class EmployeeCandidate:
     is_active: bool
 
 
+@dataclass(frozen=True)
+class EmployeeProfile:
+    employee_no: int
+    name: str
+    birth_date: date | None
+    gender: str | None
+    dept_no: int | None
+    dept_name: str | None
+    position_code: str | None
+    position_name: str | None
+    tenure_status: str
+    email: str | None
+    phone: str | None
+    extension_no: str | None
+    address: str | None
+    bank_code: str | None
+    account_no: str | None
+    hire_date: date
+    term_date: date | None
+
+
 def validate_employment_dates(
     *,
     tenure_status: str,
@@ -22,6 +43,16 @@ def validate_employment_dates(
     elif tenure_status != "퇴사" and term_date is not None:
         errors["term_date"] = "퇴사 상태가 아닌 사원에게는 퇴사일을 지정할 수 없습니다."
     return errors
+
+
+def can_view_employee_info(
+    *,
+    viewer_no: int | None,
+    target_no: int,
+    viewer_is_hr_manager: bool,
+) -> bool:
+    """HR-001: 사원은 본인 정보만 조회하고, 타인 정보는 인사관리자만 조회한다."""
+    return viewer_is_hr_manager or (viewer_no is not None and viewer_no == target_no)
 
 
 def choose_vacation_approver(

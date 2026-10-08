@@ -1,12 +1,25 @@
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from workforce.application.services import assign_employee_role, revoke_employee_role
+from workforce.application.personal_info import (
+    Actor,
+    PersonalInfoService,
+    ProcessingNotAllowed,
+    RequestNotFound,
+)
+from workforce.application.services import (
+    HR_MANAGER_ROLE,
+    assign_employee_role,
+    employee_has_role,
+    revoke_employee_role,
+)
 from workforce.domain.exceptions import WorkforceRuleViolation
+from workforce.domain.personal_info import ApprovalRequiredValues, ChangeRequestStatus
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
 from workforce.infrastructure.models import (
     Department,
@@ -16,11 +29,22 @@ from workforce.infrastructure.models import (
     Position,
     Role,
 )
-from workforce.presentation.permissions import IsHRManager, IsHRManagerOrReadOnly
+from workforce.infrastructure.personal_info import DjangoPersonalInfoRepository
+from workforce.presentation.permissions import (
+    IsHRManager,
+    IsHRManagerOrReadOnly,
+    IsSelfOrHRManager,
+    request_employee_no,
+)
 from workforce.presentation.serializers import (
+    ChangeRequestCreateSerializer,
+    ChangeRequestRejectSerializer,
+    ChangeRequestSerializer,
     DepartmentSerializer,
+    EmployeeDetailSerializer,
     EmployeeRoleSerializer,
     EmployeeSerializer,
+    OwnContactUpdateSerializer,
     PersonSerializer,
     PositionSerializer,
     RoleSerializer,
@@ -39,8 +63,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     lookup_field = "employee_no"
     lookup_url_kwarg = "emp_no"
 
+    def get_permissions(self) -> list[BasePermission]:
+        # HR-001: 목록은 인사관리자만, 상세는 본인 또는 인사관리자만 조회한다.
+        if self.action == "list":
+            return [IsAuthenticated(), IsHRManager()]
+        if self.action == "retrieve":
+            return [IsAuthenticated(), IsSelfOrHRManager()]
+        return super().get_permissions()
+
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
+        if self.action in {"retrieve", "me"}:
+            return EmployeeDetailSerializer
+        return super().get_serializer_class()
+
     def get_queryset(self) -> QuerySet[Employee]:
         queryset = Employee.objects.select_related("person", "department", "position")
+        if self.action != "list":
+            return queryset
         search = self.request.query_params.get("search", "").strip()
         department = self.request.query_params.get("dept_no", "").strip()
         status_value = self.request.query_params.get("tenure_status", "").strip()
@@ -54,6 +93,36 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if status_value:
             queryset = queryset.filter(tenure_status=status_value)
         return queryset.order_by("employee_no")
+
+    @action(detail=False, methods=["get", "patch"], permission_classes=[IsAuthenticated])
+    def me(self, request: Request) -> Response:
+        """FN-HR-001 본인 인사 정보 조회, FN-HR-002 연락처·주소 직접 수정."""
+        employee_no = request_employee_no(request)
+        if employee_no is None:
+            return Response(
+                {"detail": "계정에 연결된 사원 정보가 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if request.method == "PATCH":
+            serializer = OwnContactUpdateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            # 허용되지 않은 항목도 넘겨 HR-002 도메인 정책이 거절 사유를 결정하게 한다.
+            unknown = {
+                key: request.data[key] for key in request.data if key not in serializer.fields
+            }
+            try:
+                personal_info_service().update_own_contact(
+                    employee_no, {**serializer.validated_data, **unknown}
+                )
+            except WorkforceRuleViolation as exc:
+                return rule_violation_response(exc)
+        employee = self.get_queryset().filter(employee_no=employee_no).first()
+        if employee is None:
+            return Response(
+                {"detail": "계정에 연결된 사원 정보가 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(EmployeeDetailSerializer(employee).data)
 
     @action(
         detail=True,
@@ -133,3 +202,138 @@ class RoleViewSet(
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
     permission_classes = [IsAuthenticated]
+
+
+def personal_info_service() -> PersonalInfoService:
+    return PersonalInfoService(
+        DjangoPersonalInfoRepository(), DjangoWorkforceQueryGateway(), timezone.now
+    )
+
+
+def request_actor(request: Request) -> Actor:
+    employee_no = request_employee_no(request)
+    return Actor(
+        employee_no=employee_no,
+        is_hr_manager=employee_no is not None
+        and employee_has_role(employee_no, HR_MANAGER_ROLE, DjangoWorkforceQueryGateway()),
+        is_superuser=request.user.is_superuser,
+    )
+
+
+def rule_violation_response(exc: WorkforceRuleViolation) -> Response:
+    if isinstance(exc, RequestNotFound):
+        return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, ProcessingNotAllowed):
+        return Response({"detail": exc.message}, status=status.HTTP_403_FORBIDDEN)
+    body = {"detail": exc.message}
+    if exc.field:
+        body["field"] = exc.field
+    return Response(body, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PersonalInfoChangeRequestViewSet(viewsets.ViewSet):
+    """HR-003: 사내 이메일·급여계좌 변경 요청(FN-HR-003~005, FN-HR-011).
+
+    승인·반려 처리자는 승인 시점의 조직 정보로 애플리케이션 계층이 판정한다.
+    """
+
+    permission_classes = [IsAuthenticated]
+    lookup_value_regex = r"\d+"
+
+    def list(self, request: Request) -> Response:
+        status_value = request.query_params.get("status", "").strip()
+        try:
+            status_filter = ChangeRequestStatus(status_value) if status_value else None
+        except ValueError:
+            return Response(
+                {"detail": "알 수 없는 요청 상태입니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        service = personal_info_service()
+        actor = request_actor(request)
+        requests = service.list_requests(
+            actor,
+            status=status_filter,
+            processable_only=request.query_params.get("processable") == "true",
+            mine_only=request.query_params.get("mine") == "true",
+        )
+        return Response(self._serialize(service, actor, requests, many=True))
+
+    def create(self, request: Request) -> Response:
+        employee_no = request_employee_no(request)
+        if employee_no is None:
+            return Response(
+                {"detail": "계정에 연결된 사원 정보가 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = ChangeRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service = personal_info_service()
+        try:
+            change_request = service.submit_change_request(
+                employee_no, ApprovalRequiredValues(**serializer.validated_data)
+            )
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(
+            self._serialize(service, request_actor(request), change_request),
+            status=status.HTTP_201_CREATED,
+        )
+
+    def retrieve(self, request: Request, pk: str | None = None) -> Response:
+        service = personal_info_service()
+        actor = request_actor(request)
+        try:
+            change_request = service.get(int(pk), actor)
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(self._serialize(service, actor, change_request))
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request: Request, pk: str | None = None) -> Response:
+        service = personal_info_service()
+        actor = request_actor(request)
+        try:
+            change_request = service.approve(int(pk), actor)
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(self._serialize(service, actor, change_request))
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request: Request, pk: str | None = None) -> Response:
+        serializer = ChangeRequestRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service = personal_info_service()
+        actor = request_actor(request)
+        try:
+            change_request = service.reject(
+                int(pk), actor, serializer.validated_data.get("reason")
+            )
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(self._serialize(service, actor, change_request))
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request: Request, pk: str | None = None) -> Response:
+        service = personal_info_service()
+        actor = request_actor(request)
+        try:
+            change_request = service.cancel(int(pk), actor)
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(self._serialize(service, actor, change_request))
+
+    @staticmethod
+    def _serialize(
+        service: PersonalInfoService,
+        actor: Actor,
+        data: object,
+        *,
+        many: bool = False,
+    ) -> object:
+        items = data if many else [data]
+        processable = {
+            item.request_id for item in items if service.can_process(item, actor)
+        }
+        return ChangeRequestSerializer(
+            data, many=many, context={"processable_ids": processable}
+        ).data

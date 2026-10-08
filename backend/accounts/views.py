@@ -47,11 +47,7 @@ class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request: Request) -> Response:
-        user = User.objects.select_related(
-            "employee__person",
-            "employee__department",
-            "employee__position",
-        ).get(pk=request.user.pk)
+        user = User.objects.select_related("employee").get(pk=request.user.pk)
         return Response(CurrentUserSerializer(user).data)
 
 
