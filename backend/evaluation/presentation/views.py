@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from functools import cached_property
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -50,6 +51,7 @@ class EvaluationAPIView(APIView):
             workforce=DjangoWorkforceGateway(),
             clock=timezone.now,
             today=timezone.localdate,
+            enforce_minimum_tenure=settings.EVALUATION_MINIMUM_TENURE_ENABLED,
         )
 
     def employee_no(self, request: Request) -> int:

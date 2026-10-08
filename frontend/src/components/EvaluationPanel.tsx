@@ -16,6 +16,7 @@ import {
   submitEvaluation,
 } from "../api/evaluation"
 import { loadWorkforce } from "../api/workforce"
+import { environment } from "../config/environment"
 import type { CurrentUser } from "../types/auth"
 import type {
   Evaluation,
@@ -192,7 +193,8 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
     const basis = basisDate(createForm.eval_year)
     return [...unique.values()].filter((employee) => employee.tenure_status !== "퇴사"
       // 3개월 이하 근무자는 평가 대상이 아니다.
-      && addMonths(employee.hire_date, MINIMUM_TENURE_MONTHS) < basis)
+      && (!environment.evaluationMinimumTenure
+        || addMonths(employee.hire_date, MINIMUM_TENURE_MONTHS) < basis))
   }, [createForm.eval_year, departments, employees, myNo])
 
   // A department head who is also an HR manager evaluates; another HR manager confirms.

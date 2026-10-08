@@ -41,11 +41,13 @@ class EvaluationService:
         workforce: WorkforceGateway,
         clock: Callable[[], datetime],
         today: Callable[[], date] | None = None,
+        enforce_minimum_tenure: bool = True,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         self.workforce = workforce
         self.clock = clock
         self.today = today or (lambda: clock().date())
+        self.enforce_minimum_tenure = enforce_minimum_tenure
 
     # Evaluator use cases -------------------------------------------------------------
 
@@ -61,7 +63,7 @@ class EvaluationService:
         ensure_can_evaluate(command.evaluator_no, target)
         if not target.is_employed:
             raise InactiveEmployeeError("퇴사한 사원은 새로 평가할 수 없습니다.")
-        if target.hire_date is not None:
+        if self.enforce_minimum_tenure and target.hire_date is not None:
             ensure_minimum_tenure(target.hire_date, basis_date)
 
         evaluation = Evaluation.draft(

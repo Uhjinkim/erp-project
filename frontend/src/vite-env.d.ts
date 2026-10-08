@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_HEALTH_POLL_INTERVAL_MS?: string
   readonly VITE_ENABLE_CONNECTION_TEST_CONTROLS?: string
   readonly VITE_DEV_OFFLINE_MODE?: string
+  readonly VITE_EVALUATION_MINIMUM_TENURE_ENABLED?: string
 }
 
 interface ImportMeta {

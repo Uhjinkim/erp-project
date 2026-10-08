@@ -26,4 +26,7 @@ export const environment = {
   healthPollIntervalMs: positiveNumber(import.meta.env.VITE_HEALTH_POLL_INTERVAL_MS, 10000),
   connectionTestControls: developmentFeatures && enabled(import.meta.env.VITE_ENABLE_CONNECTION_TEST_CONTROLS ?? "true"),
   startsOffline: developmentFeatures && enabled(import.meta.env.VITE_DEV_OFFLINE_MODE),
+  // Picker guidance only; must match the backend EVALUATION_MINIMUM_TENURE_ENABLED.
+  evaluationMinimumTenure: !developmentFeatures
+    || import.meta.env.VITE_EVALUATION_MINIMUM_TENURE_ENABLED?.toLowerCase() !== "false",
 } as const

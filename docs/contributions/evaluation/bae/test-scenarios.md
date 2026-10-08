@@ -30,6 +30,19 @@
 3. 브라우저에서 `http://localhost:8080` 을 연다.
 4. 상단 연결 상태에서 백엔드·PostgreSQL·Redis·사원 연동·End to end가 모두 **연결됨**인지 확인한다.
    하나라도 끊겨 있으면 업무 화면이 비활성화된다.
+5. `start-dev.ps1` 은 Django를 `--noreload` 로 실행한다. **코드를 받거나 바꾼 뒤에는 서버를 다시
+   시작**해야 반영된다(백엔드 env 값도 시작할 때만 읽는다).
+
+### 1-1a. 로컬 테스트용 설정 (선택)
+
+`erp_dev` 사원이 모두 최근 입사자라 평가 대상이 없을 때만 쓴다. 운영 설정은 이 값을 읽지 않는다.
+
+```dotenv
+# backend/.env.development
+EVALUATION_MINIMUM_TENURE_ENABLED=false
+# frontend/.env.development (백엔드와 같게)
+VITE_EVALUATION_MINIMUM_TENURE_ENABLED=false
+```
 
 ### 1-2. DB 상태 확인 (읽기 전용)
 
@@ -39,11 +52,12 @@
 uv run python manage.py showmigrations evaluation
 ```
 
-- `0001_initial`, `0002_evaluation_workflow` 가 `[X]` 여야 한다.
-- `0003_history_changed_at_timestamp` 는 적용 전이어도 테스트에는 영향이 없다. 적용은
-  `evaluation_history` 테이블 소유자가 한다.
+- `0001` ~ `0004` 가 모두 `[X]` 여야 한다. 2026-10-08에 `erp_dev` 에 모두 적용했다.
+- `0004_widen_status_check`: `erp_dev` 의 `evaluations` 에는 원래 `chk_evaluations_status`
+  (`작성중`·`확정`만 허용) CHECK 제약이 있어 제출·반려·제외가 500으로 실패했다. `0004` 가 이를
+  다섯 상태로 넓힌다.
 
-### 1-3. ⚠️ 필수 조치 ①: `evaluation_history` 권한
+### 1-3. `evaluation_history` 권한 (2026-10-08 해결: 소유자를 `erp_developer` 로 변경)
 
 2026-10-08 점검 결과 `evaluation_history` 는 `0002`를 적용한 계정 소유이고 다른 개발자 DB 계정에는
 권한이 없다. 이 상태에서는 **평가 작성이 500 오류로 실패**한다(트랜잭션이 취소되어 데이터는 남지
@@ -61,7 +75,7 @@ GRANT USAGE, SELECT ON SEQUENCE evaluation_history_history_id_seq TO <db_role>;
 uv run python manage.py shell -c "from django.db import connection; c = connection.cursor(); c.execute(\"select has_table_privilege('evaluation_history', 'INSERT')\"); print(c.fetchone())"
 ```
 
-### 1-4. ⚠️ 필수 조치 ②: 테스트 사원의 입사일
+### 1-4. 테스트 사원의 입사일 (2026-10-08 해결: 입사일 데이터 갱신)
 
 `erp_dev` 사원 50명의 입사일이 모두 **2026-09-22** 이다. 근무 3개월 이하 제외 규칙 때문에 지금은
 올해·작년 모두 평가 대상이 한 명도 없고, 부서장 화면에 작성 폼이 나오지 않는다. 테스트하려면 DB
@@ -183,3 +197,16 @@ uv run pytest tests/test_evaluation_domain.py tests/test_evaluation_service.py t
 | A4 재배정 후보 (반영 전) | ✅ | 910011, 910026, 910038 — 반영 후에는 910001도 포함되어야 함 |
 | B1 작성 (반영 전) | ❌ | 500 — 1-3 권한 문제. `evaluations` 0건 유지(롤백 확인) |
 | 나머지 | 보류 | 1-3, 1-4 조치 후 진행 |
+
+### 2026-10-08 2차 (권한·입사일 조치 후)
+
+| 항목 | 결과 | 메모 |
+| --- | --- | --- |
+| 1-3 권한 | ✅ | `evaluation_history` 소유자 `erp_developer` |
+| 1-4 입사일 | ✅ | 2006~2026-10-01 분포, 경계 사례 포함 |
+| A1 2026 대상 | ✅ | 개발팀 14명 |
+| A2 2025 대상 | ✅ | 13명, 2025-12-01 입사자(910023) 제외 |
+| B1 작성 | ✅ | 평가 #3 (910012, 85.50, A, 기준 부서 9120) |
+| B5 제출 | ❌→수정 | 500: 기존 CHECK 제약. `0004` 작성·적용. 롤백 트랜잭션에서 제출·반려 성공 확인 |
+| 이력 시간 | ❌→수정 | `changed_at` 이 9시간 이르게 저장됨(평가 #3 "작성" 이력 1건은 그대로 남음) → `TimestampField` 수정 |
+| 나머지 | 보류 | 서버 재시작(`--noreload`) 후 진행 |

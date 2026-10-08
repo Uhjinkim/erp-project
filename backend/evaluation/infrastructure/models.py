@@ -75,6 +75,19 @@ class EvaluationModel(models.Model):
                 fields=["employee", "eval_year"],
                 name="uq_evaluations_emp_no_eval_year",
             ),
+            # The shared DB already had this check limited to 작성중/확정; 0004 widens it.
+            models.CheckConstraint(
+                condition=models.Q(
+                    eval_status__in=[
+                        "작성중",
+                        "제출",
+                        "반려",
+                        "확정",
+                        "제외",
+                    ]
+                ),
+                name="chk_evaluations_status",
+            ),
         ]
 
 

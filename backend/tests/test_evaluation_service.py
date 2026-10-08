@@ -735,3 +735,21 @@ def test_concurrent_change_is_reported_as_conflict(
     uow.evaluations.get = stale_get  # type: ignore[method-assign]
     with pytest.raises(EvaluationConflictError):
         service.confirm_evaluation(eval_id, HR)
+
+
+def test_minimum_tenure_can_be_disabled_for_local_testing(
+    uow: FakeUnitOfWork, workforce: FakeWorkforce
+) -> None:
+    workforce.targets[MEMBER] = replace(workforce.targets[MEMBER], hire_date=TODAY)
+    relaxed = EvaluationService(
+        lambda: uow, workforce, Clock(), today=lambda: TODAY, enforce_minimum_tenure=False
+    )
+    assert relaxed.create_evaluation(
+        CreateEvaluationCommand(HEAD, MEMBER, "2026", Decimal("80"))
+    ).employee_no == MEMBER
+
+
+def test_minimum_tenure_is_enforced_outside_development() -> None:
+    from django.conf import settings
+
+    assert settings.EVALUATION_MINIMUM_TENURE_ENABLED is True

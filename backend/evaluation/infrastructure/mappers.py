@@ -1,3 +1,7 @@
+from datetime import UTC, datetime
+
+from django.utils import timezone
+
 from evaluation.domain.entities import (
     Evaluation,
     EvaluationAction,
@@ -6,6 +10,13 @@ from evaluation.domain.entities import (
 )
 from evaluation.domain.value_objects import Grade
 from evaluation.infrastructure.models import EvaluationHistoryModel, EvaluationModel
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """`evaluations` uses `timestamp` columns holding UTC wall time; read them as aware UTC."""
+    if value is not None and timezone.is_naive(value):
+        return timezone.make_aware(value, UTC)
+    return value
 
 
 def model_to_entity(model: EvaluationModel) -> Evaluation:
@@ -20,10 +31,10 @@ def model_to_entity(model: EvaluationModel) -> Evaluation:
         grade=Grade(model.grade),
         comments=model.comments or "",
         status=EvaluationStatus(model.eval_status),
-        updated_at=model.updated_at,
+        updated_at=_as_utc(model.updated_at),
         created_by=model.created_by_id,
         confirmed_by=model.confirmed_by_id,
-        confirmed_at=model.confirmed_at,
+        confirmed_at=_as_utc(model.confirmed_at),
         employee_name=model.employee.person.name,
         evaluator_name=model.evaluator.person.name,
     )

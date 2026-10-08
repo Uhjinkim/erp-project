@@ -545,3 +545,12 @@ def test_evaluation_admin_is_read_only() -> None:
         assert not model_admin.has_add_permission(request)
         assert not model_admin.has_change_permission(request)
         assert not model_admin.has_delete_permission(request)
+
+
+@pytest.mark.django_db
+def test_timestamps_are_returned_with_time_zone(org) -> None:
+    created = create_evaluation(client_for(org["head"]))
+    history = client_for(org["hr"]).get(f"/api/evaluations/{created.data['eval_id']}/history/")
+    for value in (created.data["updated_at"], history.data[0]["changed_at"]):
+        rendered = str(value)
+        assert rendered.endswith("Z") or "+" in rendered, rendered
