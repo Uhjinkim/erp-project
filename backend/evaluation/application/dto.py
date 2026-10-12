@@ -1,7 +1,12 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from evaluation.domain.entities import Evaluation, EvaluationHistory, EvaluatorCandidate
+from evaluation.domain.entities import (
+    Evaluation,
+    EvaluationHistory,
+    EvaluationTarget,
+    EvaluatorCandidate,
+)
 
 
 @dataclass(frozen=True)
@@ -73,4 +78,13 @@ def candidate_to_dict(candidate: EvaluatorCandidate) -> dict[str, object]:
         "name": candidate.name,
         "dept_no": candidate.department_no,
         "dept_name": candidate.department_name,
+    }
+
+
+def target_to_dict(target: EvaluationTarget) -> dict[str, object]:
+    return {
+        "emp_no": target.employee_no,
+        "name": target.name,
+        "dept_no": target.department_no,
+        "pos_code": target.position_code,
     }

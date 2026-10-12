@@ -2,6 +2,7 @@ import { requestJson } from "./client"
 import type {
   Evaluation,
   EvaluationHistoryEntry,
+  EvaluationTargetOption,
   EvaluatorCandidate,
 } from "../types/evaluation"
 
@@ -26,6 +27,10 @@ export async function getEvaluation(evalId: number) {
 
 export async function getEvaluationHistory(evalId: number) {
   return requestJson<EvaluationHistoryEntry[]>(`${BASE}${evalId}/history/`)
+}
+
+export async function listEvaluationTargets(year: string) {
+  return requestJson<EvaluationTargetOption[]>(`${BASE}targets/?year=${encodeURIComponent(year)}`)
 }
 
 export async function listEvaluatorCandidates() {

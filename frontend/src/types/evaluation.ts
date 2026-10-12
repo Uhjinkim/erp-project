@@ -47,6 +47,13 @@ export type EvaluationHistoryEntry = {
   changed_at: string
 }
 
+export type EvaluationTargetOption = {
+  emp_no: number
+  name: string | null
+  dept_no: number | null
+  pos_code: string | null
+}
+
 export type EvaluatorCandidate = {
   emp_no: number
   name: string
