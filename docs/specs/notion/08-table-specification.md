@@ -1,8 +1,8 @@
 # 08. 테이블 명세
 
 - Notion 원문: <https://app.notion.com/p/3d78eced448d8124b3b4d00cd2c0b5f3>
-- 원문 최종 수정: 2026-09-25
-- 저장소 확인: 2026-09-25
+- 원문 최종 수정: 2026-10-12
+- 저장소 확인: 2026-10-12
 - 대상: 공유 개발 PostgreSQL `erp_dev.public`의 ERD 29개 테이블
 - 기준 자료: [ERP 개발 DB 스키마](../../../erp_dev.md), `backend/accounts`, `backend/workforce`, `backend/vacation` 모델과 마이그레이션
 - 용도: ERD의 테이블·컬럼·관계를 구현 관점에서 찾아보기 위한 문서
@@ -11,8 +11,9 @@
 
 `PK`는 기본키, `FK`는 참조키, `UK`는 고유키를 뜻한다. `→` 오른쪽은 참조 대상이다. ERD에
 표시된 화살표를 FK 관계로 정리했으며, 실제 DB 제약의 존재·이름·삭제 규칙을 모두 검증했다는
-뜻은 아니다. 일반 업무 테이블 중 Django 모델이 없는 게시판·평가·급여·변경 요청 테이블의
-키와 설명은 ERD의 컬럼명 및 관계를 기준으로 해석했다.
+뜻은 아니다. 아래 기존 컬럼 정의는 ERD의 컬럼명 및 관계를 기준으로 해석했다.
+2026-10-12 코드 대조에서 게시판·평가·급여·변경 요청 모델과 migration이 확인되었다.
+모델 상태·migration 정의와 실제 공유 DB 적용 상태는 아래 부분 통합 표에서 구분한다.
 
 ERD에는 대부분의 컬럼에 대한 NULL 허용 여부, 기본값, CHECK 제약, 인덱스가 없다. 따라서
 아래에는 이를 임의로 채우지 않았다. 타입의 `timestamp`는 시간대 정보가 없는 값이고,
@@ -418,11 +419,40 @@ ERD에는 대부분의 컬럼에 대한 NULL 허용 여부, 기본값, CHECK 제
   `persons.birth_date`, `employees.dept_no`, `employees.position_code`가 `NOT NULL`이었다.
   현재 Django 모델의 nullable 선언과 차이가 있다. 이 문서는 컬럼 타입·관계를 ERD 기준으로
   적었으며 해당 차이를 숨기지 않는다.
-- 게시판·평가·급여·변경 요청 테이블은 현재 저장소에 대응 Django 모델 또는 생성
-  마이그레이션이 없다. 위의 `식별 컬럼` 표기는 이름에 따른 해석이며 실제 PK·UK·FK와
-  NULL 허용 여부는 대상 DB의 `pg_constraint`와 `information_schema`로 재확인해야 한다.
+- 게시판·평가·급여·변경 요청에 대응하는 모델·migration은 존재한다. 기존 ERD의
+  `식별 컬럼`을 실제 PK·UK 검증 결과로 해석하지 않는다. 실제 제약·NULL·적용 이력은
+  읽기 전용 대조가 필요하며 이번 문서 작업에서 공유 DB를 재확인하지 않았다.
 - `accounts_users.password`는 평문이 아니라 Django 해시를 저장한다. `account_no`와
   사원 변경 요청의 전후 값은 민감정보를 담을 수 있으므로 조회·내보내기에 주의한다.
 
 업무 규칙의 원문은 Notion이며, 저장소의 [Notion 명세 스냅샷](./README.md)은
 구현 추적용이다. 이 문서는 그 제품 규칙을 새로 확정하지 않는다.
+
+## 2026-10-12 부분 통합 · 구현 상태
+
+| 영역 | 코드에서 확인한 상태 | 확정 기준과 보류 |
+| --- | --- | --- |
+| 게시판 | 0001은 기존 board_posts·board_notice_categories 상태 등록 | 기본 글·공지 테이블 매핑 |
+| 게시판 삭제 | 0002는 board_posts.deleted_at 추가 정의를 포함 | 기존 글 삭제 기능의 구현 방식; 실제 적용은 이번에 미확인 |
+| 급여 | 0001은 payroll_items·payrolls·payroll_details·payroll_history 상태 등록 | 기존 4개 legacy 테이블 매핑 |
+| 평가 | 0001은 evaluations 상태 등록; 0002에 사원·연도 고유 제약 정의 | 기존 조직 스냅샷·사원/연도 1건 기준 유지; EV-02 추가 워크플로는 보류 |
+| 변경 요청 | workforce 0004는 personal_info_change_requests 신규 생성 정의 | 기존 employee_change_requests와 다르므로 HR-01에서 정본 구조 검토 |
+
+`board_posts.deleted_at`은 모델에서 NULL 가능한 DateTimeField다. 값이 있으면 삭제된 글로 처리한다.
+board 0002에 함께 정의된 board_comments는 BD-02 추가 기능으로 정본 테이블 설계 통합에서 제외했다.
+평가의 evaluation_history·created_by와 급여의 payroll_public_holidays 역시 보류 정책과 연결된
+구현 사실이며 이번 확정 테이블 구성으로 채택하지 않았다.
+
+급여 모델은 저장 상태 `작성중`/`확정`, 마스터 유형 `지급`/`공제`, 이력 action
+`확정`/`확정취소`/`재확정`/`수정`을 사용한다. 확정취소를 장기 상태로 저장하지 않고
+이력 이벤트로 남긴 뒤 작성중으로 복귀하는 것은 기존 Notion 테이블 결정안의 기준이다.
+사원·귀속연월과 급여·항목 조합의 고유성은 모델에 정의되어 있다.
+마스터 시드 파일 0003~0005 및 PAYROLL_MANAGER 역할 시드는 존재하지만 현재 활성 행 수·실제 적용은 미확인이다.
+공유 DB의 금액 CHECK가 모델 선언과 동일하다고 추정하지 않는다(PY-01).
+
+기존 변경 요청 컬럼 명세를 신규 구조로 덮어쓰지 않는다. 제품 기준은 위 employee_change_requests이고
+현재 구현 경로는 HR-01에서 검토한다. 계좌 보호·보존은 HR-02 대상이다.
+[모듈 담당자 의제](../../reports/2026-10-12_module-review-agenda.md)와 OPS-01을 함께 확인한다.
+
+Notion에는 2026-10-12 기본 경로·기존 모델 매핑·오래된 설명 정정만 반영했다.
+이 저장소 문서의 보류 정책·상세 의제 기록은 Notion 확정 규칙으로 승격하지 않았다.

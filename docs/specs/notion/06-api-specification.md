@@ -1,13 +1,16 @@
 # 06. API 명세
 
 - Notion 원문: <https://app.notion.com/p/3e58eced448d81f4ade6c86fc337bd26>
-- 원문 최종 수정: 2026-09-25
-- 저장소 확인: 2026-09-25
+- 원문 최종 수정: 2026-10-12
+- 저장소 확인: 2026-10-12
 - 기준 구현: Django REST Framework 백엔드의 현재 라우트, 뷰, 직렬화 코드
 - 개발 직접 호출 기본 URL: `http://localhost:8000`
 - nginx 통합 개발환경 기본 URL: `http://localhost:8080`
 
-이 문서는 현재 저장소에 구현된 API의 동작을 코드 기준으로 정리한 명세다. 별도 OpenAPI 또는
+이 문서는 현재 저장소에 구현된 API의 동작을 코드 기준으로 정리한 명세다.
+2026-10-12 기여 문서 부분 통합으로 인사·게시판·평가·급여의 기본 라우트를 보완했다.
+추가 정책·구현 차이는 [모듈 검토 의제](../../reports/2026-10-12_module-review-agenda.md)에
+분리했으며, 아래 현재 동작 기록이 제품 정책 승인이나 공유 DB 적용 확인을 뜻하지 않는다. 별도 OpenAPI 또는
 Swagger 엔드포인트는 현재 구현되어 있지 않다. 모든 API 경로는 후행 슬래시(`/`)를 사용한다.
 
 ## 1. 공통 규칙
@@ -91,9 +94,9 @@ Swagger 엔드포인트는 현재 구현되어 있지 않다. 모든 API 경로�
 | `GET` | `/api/workforce/` | 인증 사용자 | 사원·조직 API 탐색 루트 |
 | `GET`, `POST` | `/api/workforce/persons/` | HR 관리자 | 인적사항 목록 조회, 생성 |
 | `GET`, `PUT`, `PATCH`, `DELETE` | `/api/workforce/persons/{person_id}/` | HR 관리자 | 인적사항 상세 관리 |
-| `GET` | `/api/workforce/employees/` | 인증 사용자 | 사원 목록 조회와 검색 |
+| `GET` | `/api/workforce/employees/` | HR 관리자 | 사원 목록 조회와 검색; INT-01 연동 의제 |
 | `POST` | `/api/workforce/employees/` | HR 관리자 | 사원 생성 |
-| `GET` | `/api/workforce/employees/{emp_no}/` | 인증 사용자 | 사원 상세 조회 |
+| `GET` | `/api/workforce/employees/{emp_no}/` | 본인 또는 HR 관리자 | 사원 상세 조회 |
 | `PUT`, `PATCH`, `DELETE` | `/api/workforce/employees/{emp_no}/` | HR 관리자 | 사원 수정, 삭제 |
 | `GET` | `/api/workforce/employees/{emp_no}/roles/` | HR 관리자 | 사원의 역할 배정 이력 조회 |
 | `POST` | `/api/workforce/employees/{emp_no}/roles/` | HR 관리자 | 역할 부여 |
@@ -567,7 +570,96 @@ Swagger 엔드포인트는 현재 구현되어 있지 않다. 모든 API 경로�
 }
 ```
 
-## 7. 구현 기준 파일
+## 7. 기여 문서 부분 통합 API
+
+- 코드 확인일: 2026-10-12. 세션 인증·CSRF·사원번호 연결이 필요하다.
+- 아래는 기존 제품 기능에 대응하는 기본 경로와 현재 transport 동작이다.
+- 댓글과 평가 추가 워크플로 API는 이번 정본 통합에서 제외했다. 해당 경로가 코드에서 제거된 것은 아니다.
+- 현재 구현의 보류 제한은 의제에 연결한다. 모듈 전체의 명세 준수 완료를 선언하지 않는다.
+
+### 7.1 본인 인사정보와 변경 요청
+
+| 메서드 | 경로 | 현재 동작 |
+| --- | --- | --- |
+| GET | `/api/workforce/employees/me/` | 연결된 사원 본인의 상세 조회 |
+| PATCH | `/api/workforce/employees/me/` | `phone`, `address` 수정; 그 외 필드 거절 |
+| GET, POST | `/api/workforce/personal-info-requests/` | 본인 요청 또는 HR 전체 조회 / 본인 요청 생성 |
+| GET | `/api/workforce/personal-info-requests/{id}/` | 요청자·HR의 조회 |
+| POST | `/api/workforce/personal-info-requests/{id}/approve/` | 대기 요청 승인 |
+| POST | `/api/workforce/personal-info-requests/{id}/reject/` | 대기 요청 반려; `reason` 선택 |
+| POST | `/api/workforce/personal-info-requests/{id}/cancel/` | 요청자가 본인의 대기 요청 취소 |
+
+본인·상세 응답에는 사번, 이름, 부서·직급 코드와 이름, 생년월일·성별, 재직 상태,
+이메일·연락처·내선·주소, 은행 코드·계좌번호, 입퇴사일이 포함된다.
+연결된 사원이 없으면 본인 조회는 404다. 상세 조회는 본인 또는 HR만 허용한다.
+사원 수정에서 사번 변경과 등록 이후 이메일 직접 변경은 400으로 거절한다.
+
+변경 요청 본문은 변경할 `email` 또는 `bank_code`·`account_no`를 사용한다.
+목록은 `status`, `mine=true`, `processable=true` 필터를 지원한다.
+승인은 실제 값을 반영하고 반려·취소는 유지한다. 도메인 오류는 400과 `detail`, 선택 `field`로 반환한다.
+보이지 않는 요청은 404, 열람 가능하지만 처리할 수 없는 요청은 403이다.
+현재 구현에는 HR 요청자의 특별 처리자 판정·대기 1건 제한·로그인 이메일 동기화가 있다.
+이는 확정 제품 정책으로 채택하지 않았으며 HR-03에서 다룬다. 계좌 보호·테이블 차이는 HR-01·HR-02 대상이다.
+
+### 7.2 게시글 기본 기능
+
+| 메서드 | 경로 | 기존 기능 / 현재 동작 |
+| --- | --- | --- |
+| GET, POST | `/api/board/posts/` | 목록 / 일반·공지 작성 |
+| GET | `/api/board/posts/{id}/` | 상세 조회 |
+| PATCH | `/api/board/posts/{id}/` | 작성자 또는 superuser가 제목·내용 수정 |
+| DELETE | `/api/board/posts/{id}/` | 작성자 또는 superuser가 삭제; 204 |
+
+작성 입력은 `post_type`(`일반`/`공지`), `title`(최대 100자), `content`다.
+일반글은 분류를 가지지 않는다. 공지 입력 `notice_category`는 현재 코드가 전달값의 자격을 검사한다.
+분류 범위와 BD-008 자동 부여의 차이는 BD-01 의제로 보류한다.
+수정 입력은 `title`, `content`이며 분류 변경은 받지 않는다. 삭제는 `deleted_at`을 기록하고
+목록·상세에서 숨기는 현재 구현 방식이다. 삭제 방식은 별도 새 비즈니스 규칙으로 추가하지 않는다.
+게시글 응답은 `writer_name`을 포함한다. 권한 오류 403, 없는/삭제된 글 404,
+그 밖의 도메인 오류 400과 `code`, `detail`을 사용한다.
+
+### 7.3 평가 기본 기능의 현재 경로
+
+| 메서드 | 경로 | 기존 기능 |
+| --- | --- | --- |
+| GET, POST | `/api/evaluations/` | 허용 범위 목록 / 평가 작성 |
+| GET, PATCH | `/api/evaluations/{id}/` | 상세 / 점수·의견 수정 |
+| POST | `/api/evaluations/{id}/confirm/` | HR 확정 |
+
+작성 본문은 `emp_no`, `eval_year`, `score`, 선택 `comments`다. 목록은 `year` 필터를 지원한다.
+등급은 서버가 계산하고 대상자는 확정된 본인 평가만 조회한다. 권한 밖 평가는 404로 숨긴다.
+현재 코드는 HR 부서장 작성 금지, 제출 후 확정, 생성 연도·조직 기준일 등 추가 제한을 적용한다.
+따라서 위 기능의 구현 완료는 EV-01·EV-02와 INT-01 해결 후 판단한다.
+추가 제출·반려·재배정·제외·확정취소·이력 경로를 기존 FN-EV 기능으로 승격하지 않는다.
+
+### 7.4 급여 기본 기능
+
+모든 경로는 `/api/payroll/` 아래에 있다.
+
+| 메서드 | 상대 경로 | 기존 기능 / 현재 입력 |
+| --- | --- | --- |
+| GET | `components/` | 활성 지급·공제 마스터 조회 |
+| GET | `statements/` | 본인 목록; `emp_no` 또는 `all=true` 관리 조회는 급여담당자 |
+| POST | `statements/` | 생성: `emp_no`, `year`, `month`, 선택 `items` |
+| GET | `statements/{id}/` | 본인 또는 급여담당자 상세 |
+| PUT | `statements/{id}/items/` | 작성중 항목 교체: `items` |
+| POST | `statements/{id}/confirm/` | 확정 또는 이력에 따른 재확정 |
+| POST | `statements/{id}/cancel-confirmation/` | 확정취소: 공백이 아닌 `reason`(최대 255자) |
+| GET | `statements/{id}/history/` | 허용 범위 변경 이력 |
+
+항목은 `component_code`, `amount`(현재 소수 둘째 자리까지, 0 이상)를 사용한다.
+항목 수정은 최소 1건, 확정은 항목이 있는 작성중 급여만 허용한다.
+응답에는 `statement_id`, `employee_no`, `year`, `month`, `payment_date`, `status`, `items`,
+`total_earnings`, `total_deductions`, `net_pay`, `confirmed_by`, `confirmed_at` 및
+`employee` 요약(`emp_no`, `name`, `position_name`)이 있다.
+
+현재 코드는 일반 사원에게 확정 건만 공개하고 급여담당자의 본인 처리를 금지한다.
+이력의 공통 식별 필드 `history_id`, `statement_id`, `action`, `changed_at`에 더해,
+급여담당자는 `actor_employee_no`, `actor_name`, `reason`을 받는다.
+이 공개·처리 제한과 지급일은 PY-02에서 검토하며 확정 제품 규칙으로 채택하지 않는다.
+PY-009의 최종 올림은 현재 계산과 다르므로 PY-01 해결 전 준수 완료로 표시하지 않는다.
+
+## 8. 구현 기준 파일
 
 - 전체 라우팅: `backend/config/urls.py`
 - 인증·계정: `backend/accounts/urls.py`, `backend/accounts/views.py`, `backend/accounts/serializers.py`
@@ -576,3 +668,6 @@ Swagger 엔드포인트는 현재 구현되어 있지 않다. 모든 API 경로�
 - 휴가 응답 DTO와 업무 규칙: `backend/vacation/application/dto.py`, `service.py`
 
 API 구현이 변경되면 이 문서의 기준일, 엔드포인트 표, 요청·응답 예시와 오류 코드를 함께 갱신한다.
+
+Notion에는 2026-10-12 기본 경로·기존 모델 매핑·오래된 설명 정정만 반영했다.
+이 저장소 문서의 보류 정책·상세 의제 기록은 Notion 확정 규칙으로 승격하지 않았다.

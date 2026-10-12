@@ -31,6 +31,9 @@ erp-project/
 │   ├── accounts/            이메일 로그인과 세션 인증
 │   ├── workforce/           사원·부서·직급·역할
 │   ├── vacation/            휴가 신청·승인
+│   ├── board/               일반글·공지
+│   ├── evaluation/          인사평가
+│   ├── payroll/             급여 정산·정정
 │   └── config/              환경별 Django 설정과 health check
 ├── frontend/                React 애플리케이션
 ├── nginx/                   로컬 개발 reverse proxy 설정 템플릿
@@ -372,6 +375,19 @@ Django 서버 세션과 HttpOnly 쿠키로 관리합니다.
 휴가 모듈은 신청, 취소, 승인, 반려, 승인 회수, 수정·재신청과 상태 이력을 제공합니다. 재직 중인
 소속 부서장이 1차 승인자이며, 부서장이 없거나 신청자 본인이 부서장이면 인사 승인담당자를
 사용합니다.
+
+### 기여 문서 부분 통합 모듈
+
+본인 인사정보·개인정보 변경 요청, 게시글 작성·조회·수정·삭제, 인사평가 작성·등급·확정·본인 결과 조회,
+급여 생성·항목 수정·확정·정정·조회에 대한 기존 명세를 공용 문서에 통합했습니다.
+기본 API 경로는 `/api/workforce/`, `/api/board/`, `/api/evaluations/`, `/api/payroll/`입니다.
+코드는 추가 정책과 미해결 연동 문제를 포함하므로 전체 기능의 명세 준수·배포 완료를 뜻하지 않습니다.
+화면은 이전에 결정한 디자인 시안을 기준으로 재설계하며 기존 배치를 공용 기준으로 채택하지 않습니다.
+
+[API 명세](docs/specs/notion/06-api-specification.md),
+[테이블 명세](docs/specs/notion/08-table-specification.md),
+[모듈 담당자 의제](docs/reports/2026-10-12_module-review-agenda.md),
+[통합 보고서](docs/reports/2026-10-12_contribution-docs-integration.md)를 확인합니다.
 
 ## 8. Migration과 공유 DB 안전수칙
 
