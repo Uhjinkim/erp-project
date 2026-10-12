@@ -36,3 +36,7 @@ class PayrollComponentNotFoundError(PayrollError):
 
 class InactiveEmployeeError(PayrollError):
     code = "inactive_employee"
+
+
+class PayrollNotConfirmedError(PayrollError):
+    code = "not_confirmed"
