@@ -13,10 +13,12 @@ class CreateStatementSerializer(serializers.Serializer):
     year = serializers.IntegerField(min_value=2000, max_value=2100)
     month = serializers.IntegerField(min_value=1, max_value=12)
     items = PayrollItemInputSerializer(many=True, required=False, default=list)
+    payment_date = serializers.DateField(required=False, allow_null=True, default=None)
 
 
 class UpdateItemsSerializer(serializers.Serializer):
     items = PayrollItemInputSerializer(many=True)
+    payment_date = serializers.DateField(required=False, allow_null=True, default=None)
 
     def validate_items(self, value: list[dict[str, object]]) -> list[dict[str, object]]:
         if not value:
