@@ -9,15 +9,15 @@ from evaluation.application.dto import (
 )
 from evaluation.application.ports import WorkforceGateway
 from evaluation.domain.entities import (
-    CONTENT_ACTIONS,
     EVALUATOR_PERMISSION_MESSAGE,
     Evaluation,
     EvaluationHistory,
+    EvaluationTarget,
     EvaluatorCandidate,
+    content_authors,
     creation_history,
     ensure_can_evaluate,
     ensure_eligible_evaluator,
-    ensure_not_hr_manager_evaluator,
     restorable_status,
 )
 from evaluation.domain.exceptions import (
@@ -30,7 +30,9 @@ from evaluation.domain.repositories import EvaluationUnitOfWork
 from evaluation.domain.value_objects import (
     EvaluationYear,
     ensure_creatable_year,
+    ensure_minimum_tenure,
     evaluation_basis_date,
+    has_minimum_tenure,
 )
 
 
@@ -41,11 +43,13 @@ class EvaluationService:
         workforce: WorkforceGateway,
         clock: Callable[[], datetime],
         today: Callable[[], date] | None = None,
+        enforce_minimum_tenure: bool = True,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         self.workforce = workforce
         self.clock = clock
         self.today = today or (lambda: clock().date())
+        self.enforce_minimum_tenure = enforce_minimum_tenure
 
     # Evaluator use cases -------------------------------------------------------------
 
@@ -53,16 +57,16 @@ class EvaluationService:
         self._ensure_active(command.evaluator_no)
         today = self.today()
         ensure_creatable_year(command.eval_year, today.year)
-        target = self.workforce.evaluation_target(
-            command.employee_no, evaluation_basis_date(command.eval_year, today)
-        )
+        basis_date = evaluation_basis_date(command.eval_year, today)
+        target = self.workforce.evaluation_target(command.employee_no, basis_date)
         # Check authority before revealing anything about the target (HR-001).
         if target is None:
             raise EvaluationPermissionError(EVALUATOR_PERMISSION_MESSAGE)
         ensure_can_evaluate(command.evaluator_no, target)
-        ensure_not_hr_manager_evaluator(self.workforce.is_hr_manager(command.evaluator_no))
         if not target.is_employed:
             raise InactiveEmployeeError("퇴사한 사원은 새로 평가할 수 없습니다.")
+        if self.enforce_minimum_tenure and target.hire_date is not None:
+            ensure_minimum_tenure(target.hire_date, basis_date)
 
         evaluation = Evaluation.draft(
             target=target,
@@ -99,24 +103,25 @@ class EvaluationService:
         return self._hr_action(
             eval_id,
             actor_no,
-            lambda evaluation, _histories, now: evaluation.return_for_revision(
-                actor_no, reason, now
+            lambda evaluation, histories, now: evaluation.return_for_revision(
+                actor_no, reason, now, content_authors=content_authors(histories)
             ),
         )
 
     def reassign_evaluation(self, command: ReassignEvaluationCommand) -> Evaluation:
         def reassign(
-            evaluation: Evaluation, _histories: list[EvaluationHistory], now: datetime
+            evaluation: Evaluation, histories: list[EvaluationHistory], now: datetime
         ) -> EvaluationHistory:
             # Checked only after the caller is known to be an HR manager.
             if not self.workforce.is_active_employee(command.new_evaluator_no):
                 raise InactiveEmployeeError("재직 중인 사원만 평가자로 지정할 수 있습니다.")
-            ensure_eligible_evaluator(
-                self.workforce.is_department_head(command.new_evaluator_no),
-                self.workforce.is_hr_manager(command.new_evaluator_no),
-            )
+            ensure_eligible_evaluator(self.workforce.is_department_head(command.new_evaluator_no))
             return evaluation.reassign(
-                command.actor_no, command.new_evaluator_no, command.reason, now
+                command.actor_no,
+                command.new_evaluator_no,
+                command.reason,
+                now,
+                content_authors=content_authors(histories),
             )
 
         return self._hr_action(command.eval_id, command.actor_no, reassign)
@@ -125,10 +130,11 @@ class EvaluationService:
         def confirm(
             evaluation: Evaluation, histories: list[EvaluationHistory], now: datetime
         ) -> EvaluationHistory:
-            authors = {entry.actor_no for entry in histories if entry.action in CONTENT_ACTIONS}
-            return evaluation.confirm(actor_no, authors, now)
+            return evaluation.confirm(actor_no, set(content_authors(histories)), now)
 
-        return self._hr_action(eval_id, actor_no, confirm)
+        # The target asking to confirm their own evaluation gets confirmation_not_allowed
+        # rather than the EV-005 404 used by the other HR actions.
+        return self._hr_action(eval_id, actor_no, confirm, hide_from_target=False)
 
     def cancel_confirmation(self, eval_id: int, actor_no: int, reason: str) -> Evaluation:
         return self._hr_action(
@@ -143,7 +149,9 @@ class EvaluationService:
         return self._hr_action(
             eval_id,
             actor_no,
-            lambda evaluation, _histories, now: evaluation.exclude(actor_no, reason, now),
+            lambda evaluation, histories, now: evaluation.exclude(
+                actor_no, reason, now, content_authors=content_authors(histories)
+            ),
         )
 
     def cancel_exclusion(self, eval_id: int, actor_no: int, reason: str = "") -> Evaluation:
@@ -154,6 +162,35 @@ class EvaluationService:
                 actor_no, restorable_status(histories), reason, now
             ),
         )
+
+    def evaluation_targets(self, evaluator_no: int, eval_year: str) -> list[EvaluationTarget]:
+        """Who the caller may newly evaluate for the year, for the creation picker (FN-EV-001).
+
+        Applies the same rules as creation, so the picker no longer needs the HR-only
+        employee list. Employees who already have an evaluation for the year are left out.
+        """
+        self._ensure_active(evaluator_no)
+        today = self.today()
+        ensure_creatable_year(eval_year, today.year)
+        basis_date = evaluation_basis_date(eval_year, today)
+        targets = [
+            target
+            for target in self.workforce.evaluation_target_pool(evaluator_no, basis_date)
+            if target.employee_no != evaluator_no
+            and target.designated_evaluator_no == evaluator_no
+            and target.is_employed
+            and (
+                not self.enforce_minimum_tenure
+                or target.hire_date is None
+                or has_minimum_tenure(target.hire_date, basis_date)
+            )
+        ]
+        with self.unit_of_work_factory() as uow:
+            return [
+                target
+                for target in targets
+                if not uow.evaluations.exists_for(target.employee_no, eval_year)
+            ]
 
     def evaluator_candidates(self, actor_no: int) -> list[EvaluatorCandidate]:
         """Who an HR manager may pick when reassigning (FN-EV-001)."""
@@ -206,11 +243,9 @@ class EvaluationService:
         with self.unit_of_work_factory() as uow:
             evaluation = self._get_visible(uow, eval_id, actor_no, is_hr)
             if actor_no == evaluation.evaluator_no:
-                # Re-checked on every save: an evaluator who lost the head post or received
-                # the HR manager role must be reassigned first.
-                ensure_eligible_evaluator(self.workforce.is_department_head(actor_no), is_hr)
-            else:
-                ensure_not_hr_manager_evaluator(is_hr)
+                # Re-checked on every save: an evaluator who lost the head post must be
+                # reassigned first.
+                ensure_eligible_evaluator(self.workforce.is_department_head(actor_no))
             expected = replace(evaluation)
             history = apply(evaluation, self.clock())
             return self._save(uow, evaluation, expected, history)
@@ -220,13 +255,17 @@ class EvaluationService:
         eval_id: int,
         actor_no: int,
         apply: Callable[[Evaluation, list[EvaluationHistory], datetime], EvaluationHistory],
+        *,
+        hide_from_target: bool = True,
     ) -> Evaluation:
         self._ensure_active(actor_no)
         if not self.workforce.is_hr_manager(actor_no):
             raise EvaluationPermissionError("인사관리자만 처리할 수 있습니다.")
         with self.unit_of_work_factory() as uow:
             evaluation = uow.evaluations.get(eval_id)
-            if not evaluation.is_visible_to(actor_no, viewer_is_hr_manager=True):
+            if hide_from_target and not evaluation.is_visible_to(
+                actor_no, viewer_is_hr_manager=True
+            ):
                 # EV-005: an HR manager's own unconfirmed evaluation does not exist for them.
                 raise EvaluationNotFoundError("평가를 찾을 수 없습니다.")
             expected = replace(evaluation)

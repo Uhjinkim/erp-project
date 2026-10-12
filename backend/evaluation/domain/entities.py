@@ -1,5 +1,7 @@
+from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
@@ -7,9 +9,9 @@ from evaluation.domain.exceptions import (
     ConfirmationNotAllowedError,
     EvaluationPermissionError,
     EvaluationStateError,
-    HRManagerEvaluatorError,
     InvalidEvaluationError,
     NotDepartmentHeadError,
+    OwnEvaluationActionError,
     SelfEvaluationError,
 )
 from evaluation.domain.value_objects import EvaluationScore, EvaluationYear, Grade, Reason
@@ -48,6 +50,10 @@ CONTENT_ACTIONS = frozenset(
 )
 
 
+def content_authors(histories: Iterable["EvaluationHistory"]) -> frozenset[int]:
+    return frozenset(entry.actor_no for entry in histories if entry.action in CONTENT_ACTIONS)
+
+
 @dataclass(frozen=True)
 class EvaluationTarget:
     """Workforce facts about the evaluated employee.
@@ -62,6 +68,9 @@ class EvaluationTarget:
     position_code: str | None
     department_head_no: int | None
     parent_department_head_no: int | None = None
+    # Always set by the workforce gateway; None only skips the tenure rule in tests.
+    hire_date: date | None = None
+    name: str | None = None
 
     @property
     def is_department_head(self) -> bool:
@@ -78,24 +87,14 @@ class EvaluationTarget:
 EVALUATOR_PERMISSION_MESSAGE = "해당 사원을 평가할 권한이 없습니다."
 
 
-def ensure_not_hr_manager_evaluator(is_hr_manager: bool) -> None:
-    """FN-EV-001: department heads write evaluations; HR managers never act as evaluators.
+def ensure_eligible_evaluator(is_department_head: bool) -> None:
+    """FN-EV-001: an evaluator is always a current department head.
 
-    Keeps writing (평가자) and HR handling (재배정·반려·확정) in different hands.
-    """
-    if is_hr_manager:
-        raise HRManagerEvaluatorError(
-            "인사관리자는 평가자가 될 수 없습니다. 인사관리자가 아닌 평가자로 재배정해야 합니다."
-        )
-
-
-def ensure_eligible_evaluator(is_department_head: bool, is_hr_manager: bool) -> None:
-    """FN-EV-001: an evaluator is always a current department head who is not an HR manager.
-
+    A department head who is also an HR manager may evaluate; another HR manager then
+    confirms, because the current evaluator can never confirm (사용자 확인, 2026-10-08).
     Applied when assigning an evaluator and again whenever the evaluator edits or submits,
     so someone who has lost the head post must be replaced by an HR reassignment first.
     """
-    ensure_not_hr_manager_evaluator(is_hr_manager)
     if not is_department_head:
         raise NotDepartmentHeadError(
             "평가자는 현재 부서장이어야 합니다. 인사관리자가 부서장으로 재배정해야 합니다."
@@ -215,9 +214,17 @@ class Evaluation:
 
     # HR manager actions (the use case checks the HR role) --------------------------
 
-    def return_for_revision(self, actor_no: int, reason: str, now: datetime) -> EvaluationHistory:
+    def return_for_revision(
+        self,
+        actor_no: int,
+        reason: str,
+        now: datetime,
+        *,
+        content_authors: AbstractSet[int] = frozenset(),
+    ) -> EvaluationHistory:
         """반려: send a submitted evaluation back to the same evaluator for revision."""
         self._require_not_target(actor_no)
+        self._require_not_author(actor_no, content_authors)
         Reason(reason)
         self._require_status({EvaluationStatus.SUBMITTED}, "제출된 평가만 반려할 수 있습니다.")
         return self._record(
@@ -225,7 +232,13 @@ class Evaluation:
         )
 
     def reassign(
-        self, actor_no: int, new_evaluator_no: int, reason: str, now: datetime
+        self,
+        actor_no: int,
+        new_evaluator_no: int,
+        reason: str,
+        now: datetime,
+        *,
+        content_authors: AbstractSet[int] = frozenset(),
     ) -> EvaluationHistory:
         """Hand the unconfirmed evaluation to another evaluator.
 
@@ -233,6 +246,7 @@ class Evaluation:
         inherited draft and submits it under their own name.
         """
         self._require_not_target(actor_no)
+        self._require_not_author(actor_no, content_authors)
         Reason(reason)
         self._require_status(UNCONFIRMED_STATUSES, "확정 전 평가만 평가자를 변경할 수 있습니다.")
         if new_evaluator_no == self.employee_no:
@@ -292,9 +306,17 @@ class Evaluation:
         self.confirmed_at = None
         return history
 
-    def exclude(self, actor_no: int, reason: str, now: datetime) -> EvaluationHistory:
+    def exclude(
+        self,
+        actor_no: int,
+        reason: str,
+        now: datetime,
+        *,
+        content_authors: AbstractSet[int] = frozenset(),
+    ) -> EvaluationHistory:
         """평가 제외: distinct from a zero score; the content is kept for a later cancel."""
         self._require_not_target(actor_no)
+        self._require_not_author(actor_no, content_authors)
         Reason(reason)
         self._require_status(UNCONFIRMED_STATUSES, "확정 전 평가만 평가에서 제외할 수 있습니다.")
         return self._record(
@@ -373,6 +395,16 @@ class Evaluation:
     def _require_not_target(self, actor_no: int) -> None:
         if actor_no == self.employee_no:
             raise EvaluationPermissionError("본인의 평가는 처리할 수 없습니다.")
+
+    def _require_not_author(self, actor_no: int, content_authors: AbstractSet[int]) -> None:
+        """An HR manager who evaluates may not return, exclude or reassign that evaluation.
+
+        Same separation as confirmation (사용자 확인, 2026-10-12): another HR manager handles it.
+        """
+        if actor_no == self.evaluator_no or actor_no in content_authors:
+            raise OwnEvaluationActionError(
+                "평가를 작성한 사원은 해당 평가를 반려·제외·재배정할 수 없습니다."
+            )
 
     def _require_status(self, allowed: set | frozenset, message: str) -> None:
         if self.status not in allowed:
