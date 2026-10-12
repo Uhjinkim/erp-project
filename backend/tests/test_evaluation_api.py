@@ -401,6 +401,59 @@ def test_employee_with_three_months_or_less_is_not_evaluated(org) -> None:
     assert response.data["code"] == "insufficient_tenure"
 
 
+def target_nos(client: APIClient, year: str | None = None) -> list[int]:
+    response = client.get("/api/evaluations/targets/", {"year": year or current_year()})
+    assert response.status_code == 200
+    return [item["emp_no"] for item in response.data]
+
+
+@pytest.mark.django_db
+def test_department_head_without_hr_role_gets_creation_targets(org) -> None:
+    """Regression: the picker must not depend on the HR-only employee list (HR-001)."""
+    create_employee(1009, "newbie@example.com", department=org["member"].department)
+    Employee.objects.filter(employee_no=1009).update(hire_date=timezone.localdate())
+    head = client_for(org["head"])
+    assert head.get("/api/workforce/employees/").status_code == 403
+
+    response = head.get("/api/evaluations/targets/", {"year": current_year()})
+    assert response.status_code == 200
+    assert {item["emp_no"] for item in response.data} == {1001, 2002}
+    member = next(item for item in response.data if item["emp_no"] == 1001)
+    assert member == {"emp_no": 1001, "name": "사원 1001", "dept_no": 10, "pos_code": "STAFF"}
+
+    assert target_nos(client_for(org["parent_head"])) == [2001]
+    assert target_nos(client_for(org["member"])) == []
+    assert target_nos(client_for(org["hr"])) == []
+
+    assert create_evaluation(head).status_code == 201
+    assert target_nos(head) == [2002]
+
+
+@pytest.mark.django_db
+def test_creation_targets_use_year_end_department(org) -> None:
+    last_year = int(current_year()) - 1
+    moved = create_employee(1010, "moved@example.com", department=org["other"].department)
+    EmploymentHistory.objects.create(
+        employee=moved,
+        department=org["member"].department,
+        position_id="STAFF",
+        start_date=date(2024, 1, 1),
+        end_date=date(last_year, 12, 31),
+    )
+    head = client_for(org["head"])
+    assert 1010 in target_nos(head, str(last_year))
+    assert 1010 not in target_nos(head)
+
+
+@pytest.mark.django_db
+def test_creation_targets_require_valid_year(org) -> None:
+    head = client_for(org["head"])
+    assert head.get("/api/evaluations/targets/").status_code == 400
+    response = head.get("/api/evaluations/targets/", {"year": str(int(current_year()) - 2)})
+    assert response.status_code == 400
+    assert response.data["code"] == "eval_year_not_allowed"
+
+
 @pytest.mark.django_db
 def test_reassignment_only_to_department_heads_via_candidate_list(org) -> None:
     hr = client_for(org["hr"])

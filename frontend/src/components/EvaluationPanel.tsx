@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
+import { FormEvent, useCallback, useEffect, useState } from "react"
 
 import {
   cancelConfirmation,
@@ -8,6 +8,7 @@ import {
   excludeEvaluation,
   getEvaluation,
   getEvaluationHistory,
+  listEvaluationTargets,
   listEvaluations,
   listEvaluatorCandidates,
   reassignEvaluation,
@@ -15,16 +16,14 @@ import {
   reviseEvaluation,
   submitEvaluation,
 } from "../api/evaluation"
-import { loadWorkforce } from "../api/workforce"
-import { environment } from "../config/environment"
 import type { CurrentUser } from "../types/auth"
 import type {
   Evaluation,
   EvaluationAction,
   EvaluationHistoryEntry,
+  EvaluationTargetOption,
   EvaluatorCandidate,
 } from "../types/evaluation"
-import type { DepartmentSummary, EmployeeSummary } from "../types/workforce"
 
 type EvaluationPanelProps = {
   enabled: boolean
@@ -45,29 +44,6 @@ const ACTION_LABELS: Record<EvaluationAction, string> = {
 
 const EDITABLE = ["작성중", "반려"]
 const UNCONFIRMED = ["작성중", "제출", "반려"]
-const MINIMUM_TENURE_MONTHS = 3
-
-function isoDate(value: Date) {
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${value.getFullYear()}-${month}-${day}`
-}
-
-// Mirrors the backend rule for the picker only: year end for past years, today for this year.
-function basisDate(year: string) {
-  const today = isoDate(new Date())
-  const yearEnd = `${year}-12-31`
-  return yearEnd < today ? yearEnd : today
-}
-
-function addMonths(isoValue: string, months: number) {
-  const [year, month, day] = isoValue.split("-").map(Number)
-  const target = new Date(year, month - 1 + months, 1)
-  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
-  target.setDate(Math.min(day, lastDay))
-  return isoDate(target)
-}
-
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
@@ -84,8 +60,8 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
   const [selected, setSelected] = useState<Evaluation | null>(null)
   const [history, setHistory] = useState<EvaluationHistoryEntry[]>([])
   const [candidates, setCandidates] = useState<EvaluatorCandidate[]>([])
-  const [employees, setEmployees] = useState<EmployeeSummary[]>([])
-  const [departments, setDepartments] = useState<DepartmentSummary[]>([])
+  // Employees this user may newly evaluate, per selectable year (FN-EV-001).
+  const [targets, setTargets] = useState<Record<string, EvaluationTargetOption[]>>({})
   const [message, setMessage] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -103,13 +79,15 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
     if (!enabled) return
     setLoading(true)
     try {
-      const [items, workforce] = await Promise.all([
+      const thisYear = String(new Date().getFullYear())
+      const lastYear = String(Number(thisYear) - 1)
+      const [items, thisYearTargets, lastYearTargets] = await Promise.all([
         listEvaluations(yearFilter || undefined),
-        loadWorkforce(),
+        listEvaluationTargets(thisYear),
+        listEvaluationTargets(lastYear),
       ])
       setEvaluations(items)
-      setEmployees(workforce.employees)
-      setDepartments(workforce.departments)
+      setTargets({ [thisYear]: thisYearTargets, [lastYear]: lastYearTargets })
       if (isHRManager) setCandidates(await listEvaluatorCandidates())
       setMessage("")
     } catch (error) {
@@ -173,29 +151,8 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
     setCreateForm({ emp_no: "", eval_year: yearOptions[0], score: "", comments: "" })
   }
 
-  // Employees this user may evaluate as a department head (FN-EV-001), for the picker only.
-  const evaluableEmployees = useMemo(() => {
-    const headed = departments.filter((department) => department.head_emp_no === myNo)
-    const headedNos = new Set(headed.map((department) => department.dept_no))
-    const members = employees.filter(
-      (employee) => employee.dept_no !== null
-        && headedNos.has(employee.dept_no)
-        && employee.emp_no !== myNo,
-    )
-    const childHeads = departments
-      .filter((department) => department.parent_dept_no !== null
-        && headedNos.has(department.parent_dept_no)
-        && department.head_emp_no !== null
-        && department.head_emp_no !== myNo)
-      .map((department) => employees.find((employee) => employee.emp_no === department.head_emp_no))
-      .filter((employee): employee is EmployeeSummary => employee !== undefined)
-    const unique = new Map([...members, ...childHeads].map((employee) => [employee.emp_no, employee]))
-    const basis = basisDate(createForm.eval_year)
-    return [...unique.values()].filter((employee) => employee.tenure_status !== "퇴사"
-      // 3개월 이하 근무자는 평가 대상이 아니다.
-      && (!environment.evaluationMinimumTenure
-        || addMonths(employee.hire_date, MINIMUM_TENURE_MONTHS) < basis))
-  }, [createForm.eval_year, departments, employees, myNo])
+  const canCreate = yearOptions.some((year) => (targets[year] ?? []).length > 0)
+  const createTargets = targets[createForm.eval_year] ?? []
 
   // A department head who is also an HR manager evaluates; another HR manager confirms.
   const isEvaluator = selected !== null && selected.evaluator_no === myNo
@@ -225,22 +182,22 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
 
       <div className="workspace">
         <div className="evaluation-side">
-          {evaluableEmployees.length > 0 && (
+          {canCreate && (
             <form className="request-card" onSubmit={submitCreate}>
               <div className="section-heading"><div><p className="step">01</p><h2>평가 작성</h2></div></div>
               <label>
                 평가 대상
                 <select required value={createForm.emp_no} onChange={(event) => setCreateForm({ ...createForm, emp_no: event.target.value })}>
                   <option value="">선택하세요</option>
-                  {evaluableEmployees.map((employee) => (
-                    <option key={employee.emp_no} value={employee.emp_no}>{employee.name} ({employee.emp_no})</option>
+                  {createTargets.map((target) => (
+                    <option key={target.emp_no} value={target.emp_no}>{target.name ?? "이름 없음"} ({target.emp_no})</option>
                   ))}
                 </select>
               </label>
               <div className="two-columns">
                 <label>
                   평가 연도
-                  <select value={createForm.eval_year} onChange={(event) => setCreateForm({ ...createForm, eval_year: event.target.value })}>
+                  <select value={createForm.eval_year} onChange={(event) => setCreateForm({ ...createForm, eval_year: event.target.value, emp_no: "" })}>
                     {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
                   </select>
                 </label>
@@ -254,12 +211,12 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
                 <textarea rows={4} value={createForm.comments} onChange={(event) => setCreateForm({ ...createForm, comments: event.target.value })} />
               </label>
               <button className="primary" disabled={loading || !enabled} type="submit">작성중으로 저장</button>
-              <p className="helper">등급은 점수로 자동 계산됩니다. S 90점 이상, A 80점 이상, B 70점 이상, C 70점 미만. 근무 3개월 이하 사원은 목록에 나오지 않습니다.</p>
+              <p className="helper">등급은 점수로 자동 계산됩니다. S 90점 이상, A 80점 이상, B 70점 이상, C 70점 미만. 근무 3개월 이하 사원과 이미 평가가 있는 사원은 목록에 나오지 않습니다.</p>
             </form>
           )}
 
           <section className="list-panel">
-            <div className="section-heading"><div><p className="step">{evaluableEmployees.length > 0 ? "02" : "01"}</p><h2>평가 목록</h2></div></div>
+            <div className="section-heading"><div><p className="step">{canCreate ? "02" : "01"}</p><h2>평가 목록</h2></div></div>
             <div className="request-list evaluation-list">
               {evaluations.length === 0 && <div className="empty">{enabled ? "표시할 평가가 없습니다." : "서버 연결 후 평가를 불러옵니다."}</div>}
               {evaluations.map((item) => (

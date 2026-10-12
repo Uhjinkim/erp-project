@@ -155,6 +155,11 @@ class FakeWorkforce(WorkforceGateway):
         self.requested_dates.append(as_of)
         return self.targets.get(employee_no)
 
+    def evaluation_target_pool(self, evaluator_no: int, as_of: date) -> list[EvaluationTarget]:
+        # Deliberately wider than the rules: the service must do the filtering.
+        self.requested_dates.append(as_of)
+        return list(self.targets.values())
+
 
 class Clock:
     """Each call moves time forward so optimistic checks see distinct versions."""
@@ -747,6 +752,57 @@ def test_minimum_tenure_can_be_disabled_for_local_testing(
     assert relaxed.create_evaluation(
         CreateEvaluationCommand(HEAD, MEMBER, "2026", Decimal("80"))
     ).employee_no == MEMBER
+
+
+# Creation picker (FN-EV-001) ------------------------------------------------------
+
+
+def target_nos(service: EvaluationService, evaluator: int, year: str = "2026") -> list[int]:
+    return [target.employee_no for target in service.evaluation_targets(evaluator, year)]
+
+
+def test_evaluation_targets_follow_creation_rules(service: EvaluationService) -> None:
+    # Self, the retired member and other departments' people are left out.
+    assert sorted(target_nos(service, HEAD)) == [MEMBER, ON_LEAVE]
+    # A department head is offered to the parent department's head (EV-001).
+    assert target_nos(service, PARENT_HEAD) == [HEAD]
+    assert target_nos(service, OTHER) == []
+    assert target_nos(service, HR) == []
+
+
+def test_evaluation_targets_skip_already_evaluated(service: EvaluationService) -> None:
+    create(service)
+    assert target_nos(service, HEAD) == [ON_LEAVE]
+    assert sorted(target_nos(service, HEAD, "2025")) == [MEMBER, ON_LEAVE]
+
+
+def test_evaluation_targets_use_year_end_basis_and_tenure(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    workforce.targets[MEMBER] = replace(workforce.targets[MEMBER], hire_date=date(2025, 10, 1))
+    assert MEMBER in target_nos(service, HEAD, "2026")
+    assert MEMBER not in target_nos(service, HEAD, "2025")
+    assert workforce.requested_dates[-1] == date(2025, 12, 31)
+
+
+def test_evaluation_targets_respect_disabled_tenure_rule(
+    service: EvaluationService, uow: FakeUnitOfWork, workforce: FakeWorkforce
+) -> None:
+    workforce.targets[MEMBER] = replace(workforce.targets[MEMBER], hire_date=TODAY)
+    relaxed = EvaluationService(
+        lambda: uow, workforce, Clock(), today=lambda: TODAY, enforce_minimum_tenure=False
+    )
+    assert MEMBER not in target_nos(service, HEAD)
+    assert MEMBER in target_nos(relaxed, HEAD)
+
+
+def test_evaluation_targets_reject_other_years_and_inactive_callers(
+    service: EvaluationService,
+) -> None:
+    with pytest.raises(EvaluationYearNotAllowedError):
+        service.evaluation_targets(HEAD, "2024")
+    with pytest.raises(InactiveEmployeeError):
+        service.evaluation_targets(RETIRED, "2026")
 
 
 def test_minimum_tenure_is_enforced_outside_development() -> None:

@@ -16,6 +16,7 @@ from evaluation.application.dto import (
     candidate_to_dict,
     evaluation_to_dict,
     history_to_dict,
+    target_to_dict,
 )
 from evaluation.application.service import EvaluationService
 from evaluation.domain.entities import Evaluation
@@ -33,6 +34,7 @@ from evaluation.infrastructure.workforce_gateways import DjangoWorkforceGateway
 from evaluation.presentation.serializers import (
     EvaluationCreateSerializer,
     EvaluationListQuerySerializer,
+    EvaluationTargetQuerySerializer,
     EvaluationUpdateSerializer,
     OptionalReasonSerializer,
     ReasonSerializer,
@@ -112,6 +114,19 @@ class EvaluationListCreateView(EvaluationAPIView):
             ),
             status.HTTP_201_CREATED,
         )
+
+
+class EvaluationTargetListView(EvaluationAPIView):
+    def get(self, request: Request) -> Response:
+        query = EvaluationTargetQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        try:
+            targets = self.service.evaluation_targets(
+                self.employee_no(request), query.validated_data["year"]
+            )
+            return Response([target_to_dict(item) for item in targets])
+        except EvaluationError as error:
+            return self.error_response(error)
 
 
 class EvaluatorCandidateListView(EvaluationAPIView):

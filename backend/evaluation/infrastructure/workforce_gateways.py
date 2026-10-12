@@ -35,8 +35,35 @@ class DjangoWorkforceGateway(WorkforceGateway):
             if department.head.is_active_employee
         ]
 
+    def evaluation_target_pool(self, evaluator_no: int, as_of: date) -> list[EvaluationTarget]:
+        headed = list(
+            Department.objects.filter(head_id=evaluator_no).values_list("dept_no", flat=True)
+        )
+        if not headed:
+            return []
+        employee_nos = set(
+            Employee.objects.filter(department_id__in=headed).values_list(
+                "employee_no", flat=True
+            )
+        )
+        # Past years use the year-end department, so include members of that date too.
+        employee_nos.update(
+            EmploymentHistory.objects.filter(department_id__in=headed, start_date__lte=as_of)
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=as_of))
+            .values_list("employee_id", flat=True)
+        )
+        employee_nos.update(
+            Department.objects.filter(parent_id__in=headed, head__isnull=False).values_list(
+                "head_id", flat=True
+            )
+        )
+        targets = (self.evaluation_target(no, as_of) for no in sorted(employee_nos))
+        return [target for target in targets if target is not None]
+
     def evaluation_target(self, employee_no: int, as_of: date) -> EvaluationTarget | None:
-        employee = Employee.objects.filter(employee_no=employee_no).first()
+        employee = (
+            Employee.objects.select_related("person").filter(employee_no=employee_no).first()
+        )
         if employee is None:
             return None
 
@@ -53,6 +80,7 @@ class DjangoWorkforceGateway(WorkforceGateway):
             is_employed=employee.tenure_status != Employee.TenureStatus.TERMINATED
             and employee.term_date is None,
             hire_date=employee.hire_date,
+            name=employee.person.name,
             department_no=department_no,
             position_code=position_code,
             # Department heads have no history, so these are the departments' current heads.

@@ -13,6 +13,7 @@ from evaluation.domain.entities import (
     EVALUATOR_PERMISSION_MESSAGE,
     Evaluation,
     EvaluationHistory,
+    EvaluationTarget,
     EvaluatorCandidate,
     creation_history,
     ensure_can_evaluate,
@@ -31,6 +32,7 @@ from evaluation.domain.value_objects import (
     ensure_creatable_year,
     ensure_minimum_tenure,
     evaluation_basis_date,
+    has_minimum_tenure,
 )
 
 
@@ -155,6 +157,35 @@ class EvaluationService:
                 actor_no, restorable_status(histories), reason, now
             ),
         )
+
+    def evaluation_targets(self, evaluator_no: int, eval_year: str) -> list[EvaluationTarget]:
+        """Who the caller may newly evaluate for the year, for the creation picker (FN-EV-001).
+
+        Applies the same rules as creation, so the picker no longer needs the HR-only
+        employee list. Employees who already have an evaluation for the year are left out.
+        """
+        self._ensure_active(evaluator_no)
+        today = self.today()
+        ensure_creatable_year(eval_year, today.year)
+        basis_date = evaluation_basis_date(eval_year, today)
+        targets = [
+            target
+            for target in self.workforce.evaluation_target_pool(evaluator_no, basis_date)
+            if target.employee_no != evaluator_no
+            and target.designated_evaluator_no == evaluator_no
+            and target.is_employed
+            and (
+                not self.enforce_minimum_tenure
+                or target.hire_date is None
+                or has_minimum_tenure(target.hire_date, basis_date)
+            )
+        ]
+        with self.unit_of_work_factory() as uow:
+            return [
+                target
+                for target in targets
+                if not uow.evaluations.exists_for(target.employee_no, eval_year)
+            ]
 
     def evaluator_candidates(self, actor_no: int) -> list[EvaluatorCandidate]:
         """Who an HR manager may pick when reassigning (FN-EV-001)."""

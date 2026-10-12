@@ -63,6 +63,7 @@ class EvaluationTarget:
     parent_department_head_no: int | None = None
     # Always set by the workforce gateway; None only skips the tenure rule in tests.
     hire_date: date | None = None
+    name: str | None = None
 
     @property
     def is_department_head(self) -> bool:
