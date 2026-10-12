@@ -30,6 +30,10 @@ class ConfirmationNotAllowedError(EvaluationPermissionError):
     code = "confirmation_not_allowed"
 
 
+class OwnEvaluationActionError(EvaluationPermissionError):
+    code = "own_evaluation_action_not_allowed"
+
+
 class InactiveEmployeeError(EvaluationError):
     code = "inactive_employee"
 

@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react"
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import {
   cancelConfirmation,
@@ -44,6 +44,7 @@ const ACTION_LABELS: Record<EvaluationAction, string> = {
 
 const EDITABLE = ["작성중", "반려"]
 const UNCONFIRMED = ["작성중", "제출", "반려"]
+const CONTENT_ACTIONS: EvaluationAction[] = ["CREATE", "REVISE", "SUBMIT"]
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
@@ -73,6 +74,7 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
   })
   const [editForm, setEditForm] = useState({ score: "", comments: "" })
   const [reason, setReason] = useState("")
+  const reasonRef = useRef<HTMLTextAreaElement>(null)
   const [newEvaluatorNo, setNewEvaluatorNo] = useState("")
 
   const refresh = useCallback(async () => {
@@ -137,6 +139,7 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
     const text = reason.trim()
     if (!text) {
       setMessage("처리 사유를 입력하세요.")
+      reasonRef.current?.focus()
       return
     }
     void run(() => action(text), done)
@@ -157,6 +160,9 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
   // A department head who is also an HR manager evaluates; another HR manager confirms.
   const isEvaluator = selected !== null && selected.evaluator_no === myNo
   const canHandleAsHR = selected !== null && isHRManager && selected.emp_no !== myNo
+  // Whoever wrote the evaluation leaves return, confirm, exclude and reassign to another HR manager.
+  const isAuthor = selected !== null && (selected.evaluator_no === myNo
+    || history.some((entry) => CONTENT_ACTIONS.includes(entry.action) && entry.actor_no === myNo))
   const reassignOptions = candidates.filter(
     (candidate) => selected !== null
       && candidate.emp_no !== selected.evaluator_no
@@ -282,29 +288,30 @@ export function EvaluationPanel({ enabled, currentUser }: EvaluationPanelProps) 
                   <h3>인사관리자 처리</h3>
                   <label>
                     처리 사유
-                    <textarea rows={2} maxLength={255} placeholder="반려·재배정·제외·확정 취소에 필요합니다." value={reason} onChange={(event) => setReason(event.target.value)} />
+                    <textarea ref={reasonRef} rows={2} maxLength={255} placeholder="반려·재배정·제외·확정 취소에 필요합니다." value={reason} onChange={(event) => setReason(event.target.value)} />
                   </label>
                   <div className="actions">
-                    {selected.eval_status === "제출" && (
+                    {selected.eval_status === "제출" && !isAuthor && (
                       <>
                         <button type="button" disabled={loading} onClick={() => requireReason((text) => returnEvaluation(selected.eval_id, text), "평가를 반려했습니다.")}>반려</button>
-                        {selected.evaluator_no !== myNo && (
-                          <button className="accent" type="button" disabled={loading} onClick={() => void run(() => confirmEvaluation(selected.eval_id), "평가를 확정했습니다.")}>확정</button>
-                        )}
+                        <button className="accent" type="button" disabled={loading} onClick={() => void run(() => confirmEvaluation(selected.eval_id), "평가를 확정했습니다.")}>확정</button>
                       </>
                     )}
                     {selected.eval_status === "확정" && (
                       <button type="button" disabled={loading} onClick={() => requireReason((text) => cancelConfirmation(selected.eval_id, text), "확정을 취소했습니다.")}>확정 취소</button>
                     )}
-                    {UNCONFIRMED.includes(selected.eval_status) && (
+                    {UNCONFIRMED.includes(selected.eval_status) && !isAuthor && (
                       <button type="button" disabled={loading} onClick={() => requireReason((text) => excludeEvaluation(selected.eval_id, text), "평가에서 제외했습니다.")}>평가 제외</button>
                     )}
                     {selected.eval_status === "제외" && (
                       <button type="button" disabled={loading} onClick={() => void run(() => cancelExclusion(selected.eval_id, reason.trim()), "제외를 취소했습니다.")}>제외 취소</button>
                     )}
                   </div>
+                  {isAuthor && UNCONFIRMED.includes(selected.eval_status) && (
+                    <p className="helper">직접 작성한 평가는 반려·확정·제외·재배정을 다른 인사관리자가 처리합니다.</p>
+                  )}
 
-                  {UNCONFIRMED.includes(selected.eval_status) && (
+                  {UNCONFIRMED.includes(selected.eval_status) && !isAuthor && (
                     <form
                       className="reassign-form"
                       onSubmit={(event) => {

@@ -22,6 +22,7 @@ from evaluation.domain.exceptions import (
     EvaluationYearNotAllowedError,
     InsufficientTenureError,
     InvalidEvaluationError,
+    OwnEvaluationActionError,
     SelfEvaluationError,
 )
 from evaluation.domain.value_objects import (
@@ -405,6 +406,21 @@ def test_target_cannot_handle_own_evaluation_as_hr() -> None:
         evaluation.return_for_revision(MEMBER, "사유", NOW)
     with pytest.raises(EvaluationPermissionError):
         evaluation.exclude(MEMBER, "사유", NOW)
+
+
+def test_evaluation_author_cannot_return_exclude_or_reassign() -> None:
+    """Same separation as confirmation (사용자 확인, 2026-10-12)."""
+    evaluation = submitted()
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.return_for_revision(HEAD, "사유", NOW)
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.exclude(HEAD, "사유", NOW)
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.reassign(HEAD, NEW_EVALUATOR, "사유", NOW)
+    # A former author who is no longer the evaluator is refused as well.
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.exclude(NEW_EVALUATOR, "사유", NOW, content_authors={NEW_EVALUATOR})
+    assert evaluation.status == EvaluationStatus.SUBMITTED
 
 
 def test_restorable_status_uses_latest_exclusion() -> None:

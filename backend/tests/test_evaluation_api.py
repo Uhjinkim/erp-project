@@ -388,6 +388,14 @@ def test_hr_manager_department_head_evaluates_and_another_hr_confirms(org) -> No
     own = hr.post(f"/api/evaluations/{eval_id}/confirm/")
     assert own.status_code == 403
     assert own.data["code"] == "confirmation_not_allowed"
+    for path, body in [
+        ("return", {"reason": "사유"}),
+        ("exclude", {"reason": "사유"}),
+        ("reassign", {"evaluator_no": 2002, "reason": "사유"}),
+    ]:
+        response = hr.post(f"/api/evaluations/{eval_id}/{path}/", body, format="json")
+        assert response.status_code == 403, path
+        assert response.data["code"] == "own_evaluation_action_not_allowed"
     assert client_for(hr_2).post(f"/api/evaluations/{eval_id}/confirm/").status_code == 200
 
 

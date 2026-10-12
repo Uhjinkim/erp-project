@@ -30,6 +30,7 @@ from evaluation.domain.exceptions import (
     InactiveEmployeeError,
     InsufficientTenureError,
     NotDepartmentHeadError,
+    OwnEvaluationActionError,
     SelfEvaluationError,
 )
 from evaluation.domain.repositories import (
@@ -444,6 +445,28 @@ def test_hr_manager_department_head_evaluates_and_another_hr_confirms(
     with pytest.raises(ConfirmationNotAllowedError):
         service.confirm_evaluation(eval_id, HR)
     assert service.confirm_evaluation(eval_id, HR_2).confirmed_by == HR_2
+
+
+def test_hr_manager_department_head_cannot_handle_own_evaluation(
+    service: EvaluationService, workforce: FakeWorkforce
+) -> None:
+    """반려·제외·재배정도 다른 인사관리자가 한다 (사용자 확인, 2026-10-12)."""
+    workforce.heads.update({HR, HR_2})
+    workforce.targets[MEMBER] = EvaluationTarget(MEMBER, True, 10, "STAFF", HR)
+    eval_id = submitted(service, evaluator=HR)
+
+    with pytest.raises(OwnEvaluationActionError):
+        service.return_evaluation(eval_id, HR, "사유")
+    with pytest.raises(OwnEvaluationActionError):
+        service.exclude_evaluation(eval_id, HR, "사유")
+    with pytest.raises(OwnEvaluationActionError):
+        service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR, NEW_HEAD, "사유"))
+
+    # After another HR manager reassigns it, the former author still cannot act on it.
+    service.reassign_evaluation(ReassignEvaluationCommand(eval_id, HR_2, NEW_HEAD, "교체"))
+    with pytest.raises(OwnEvaluationActionError):
+        service.exclude_evaluation(eval_id, HR, "사유")
+    assert service.exclude_evaluation(eval_id, HR_2, "사유").status == EvaluationStatus.EXCLUDED
 
 
 def test_hr_manager_department_head_can_be_reassignment_target(

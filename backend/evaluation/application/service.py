@@ -9,12 +9,12 @@ from evaluation.application.dto import (
 )
 from evaluation.application.ports import WorkforceGateway
 from evaluation.domain.entities import (
-    CONTENT_ACTIONS,
     EVALUATOR_PERMISSION_MESSAGE,
     Evaluation,
     EvaluationHistory,
     EvaluationTarget,
     EvaluatorCandidate,
+    content_authors,
     creation_history,
     ensure_can_evaluate,
     ensure_eligible_evaluator,
@@ -103,21 +103,25 @@ class EvaluationService:
         return self._hr_action(
             eval_id,
             actor_no,
-            lambda evaluation, _histories, now: evaluation.return_for_revision(
-                actor_no, reason, now
+            lambda evaluation, histories, now: evaluation.return_for_revision(
+                actor_no, reason, now, content_authors=content_authors(histories)
             ),
         )
 
     def reassign_evaluation(self, command: ReassignEvaluationCommand) -> Evaluation:
         def reassign(
-            evaluation: Evaluation, _histories: list[EvaluationHistory], now: datetime
+            evaluation: Evaluation, histories: list[EvaluationHistory], now: datetime
         ) -> EvaluationHistory:
             # Checked only after the caller is known to be an HR manager.
             if not self.workforce.is_active_employee(command.new_evaluator_no):
                 raise InactiveEmployeeError("재직 중인 사원만 평가자로 지정할 수 있습니다.")
             ensure_eligible_evaluator(self.workforce.is_department_head(command.new_evaluator_no))
             return evaluation.reassign(
-                command.actor_no, command.new_evaluator_no, command.reason, now
+                command.actor_no,
+                command.new_evaluator_no,
+                command.reason,
+                now,
+                content_authors=content_authors(histories),
             )
 
         return self._hr_action(command.eval_id, command.actor_no, reassign)
@@ -126,8 +130,7 @@ class EvaluationService:
         def confirm(
             evaluation: Evaluation, histories: list[EvaluationHistory], now: datetime
         ) -> EvaluationHistory:
-            authors = {entry.actor_no for entry in histories if entry.action in CONTENT_ACTIONS}
-            return evaluation.confirm(actor_no, authors, now)
+            return evaluation.confirm(actor_no, set(content_authors(histories)), now)
 
         # The target asking to confirm their own evaluation gets confirmation_not_allowed
         # rather than the EV-005 404 used by the other HR actions.
@@ -146,7 +149,9 @@ class EvaluationService:
         return self._hr_action(
             eval_id,
             actor_no,
-            lambda evaluation, _histories, now: evaluation.exclude(actor_no, reason, now),
+            lambda evaluation, histories, now: evaluation.exclude(
+                actor_no, reason, now, content_authors=content_authors(histories)
+            ),
         )
 
     def cancel_exclusion(self, eval_id: int, actor_no: int, reason: str = "") -> Evaluation:
