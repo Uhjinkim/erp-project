@@ -16,6 +16,7 @@ def model_to_entity(model: PostModel) -> Post:
         updated_at=model.updated_at,
         deleted_at=model.deleted_at,
         writer_name=model.writer.person.name,
+        comment_count=getattr(model, "comment_count", 0) or 0,
     )
 
 
