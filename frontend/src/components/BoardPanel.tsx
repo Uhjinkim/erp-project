@@ -56,10 +56,11 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
   const [editingCommentContent, setEditingCommentContent] = useState("")
   const [eligibleCategories, setEligibleCategories] = useState<NoticeCategory[]>([])
 
-  const canModify = useCallback(
-    (post: Post) => currentUser.is_superuser || post.writer_employee_no === currentUser.employee?.emp_no,
-    [currentUser],
-  )
+  // Server enforces these rules; the UI only decides which buttons to show.
+  const isBoardModerator = currentUser.roles.includes("MANAGEMENT_OFFICER")
+  const canEdit = (writerEmployeeNo: number) =>
+    currentUser.is_superuser || writerEmployeeNo === currentUser.employee?.emp_no
+  const canDelete = (writerEmployeeNo: number) => canEdit(writerEmployeeNo) || isBoardModerator
 
   const refreshList = useCallback(async () => {
     if (!enabled) return
@@ -274,10 +275,6 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
     }
   }
 
-  function canModifyComment(comment: Comment): boolean {
-    return currentUser.is_superuser || comment.writer_employee_no === currentUser.employee?.emp_no
-  }
-
   const topLevelComments = comments.filter((comment) => comment.parent_comment_id === null)
   const repliesByParent = (parentId: number) =>
     comments.filter((comment) => comment.parent_comment_id === parentId)
@@ -335,9 +332,11 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
                   <div><dt>수정일</dt><dd>{new Date(post.updated_at).toLocaleString("ko-KR")}</dd></div>
                 )}
               </dl>
-              {canModify(post) && (
+              {canDelete(post.writer_employee_no) && (
                 <div className="actions">
-                  <button type="button" onClick={startEditPost}>수정</button>
+                  {canEdit(post.writer_employee_no) && (
+                    <button type="button" onClick={startEditPost}>수정</button>
+                  )}
                   <button type="button" onClick={() => void removePost()}>삭제</button>
                 </div>
               )}
@@ -374,11 +373,11 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
                     <p>{comment.content}</p>
                     <div className="actions">
                       <button type="button" onClick={() => setReplyTarget(comment.comment_id === replyTarget ? null : comment.comment_id)}>답글</button>
-                      {canModifyComment(comment) && (
-                        <>
-                          <button type="button" onClick={() => startEditComment(comment)}>수정</button>
-                          <button type="button" onClick={() => void removeComment(comment.comment_id)}>삭제</button>
-                        </>
+                      {canEdit(comment.writer_employee_no) && (
+                        <button type="button" onClick={() => startEditComment(comment)}>수정</button>
+                      )}
+                      {canDelete(comment.writer_employee_no) && (
+                        <button type="button" onClick={() => void removeComment(comment.comment_id)}>삭제</button>
                       )}
                     </div>
                   </>
@@ -410,9 +409,11 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
                     ) : (
                       <>
                         <p>{reply.content}</p>
-                        {canModifyComment(reply) && (
+                        {canDelete(reply.writer_employee_no) && (
                           <div className="actions">
-                            <button type="button" onClick={() => startEditComment(reply)}>수정</button>
+                            {canEdit(reply.writer_employee_no) && (
+                              <button type="button" onClick={() => startEditComment(reply)}>수정</button>
+                            )}
                             <button type="button" onClick={() => void removeComment(reply.comment_id)}>삭제</button>
                           </div>
                         )}

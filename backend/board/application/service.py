@@ -57,7 +57,13 @@ class BoardService:
 
     def delete_post(self, post_id: int, actor_employee_no: int, actor_is_admin: bool) -> None:
         post = self._get_visible(post_id)
-        post.soft_delete(actor_employee_no, actor_is_admin, self.clock())
+        post.soft_delete(
+            actor_employee_no,
+            actor_is_admin,
+            self.clock(),
+            actor_is_moderator=not actor_is_admin
+            and self.workforce.is_board_moderator(actor_employee_no),
+        )
         self.repository.save(post)
 
     def list_posts(self, viewer_employee_no: int) -> list[Post]:

@@ -22,7 +22,8 @@
 - `tests/test_board_service.py`: 공지 자격 검증, 소프트 삭제 후 목록·상세 미노출, 댓글·답글
   생성과 권한, 삭제 게시글에 댓글 불가
 - `tests/test_board_api.py`: 게시글 CRUD 흐름, 공지 권한 403, 댓글·답글·중첩 답글 400,
-  `notice-categories/eligible/`이 역할 배정에 따라 `[]` / `["PAYROLL"]`을 반환
+  `notice-categories/eligible/`이 역할 배정에 따라 `[]` / `["PAYROLL"]`을 반환, 게시글별
+  `comment_count`, 경영담당자의 타인 글·댓글 삭제 204와 수정 403
 
 ## 남은 검증
 

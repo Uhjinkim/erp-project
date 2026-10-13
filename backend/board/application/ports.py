@@ -9,3 +9,7 @@ class WorkforceGateway(ABC):
 
     @abstractmethod
     def eligible_notice_categories(self, employee_no: int) -> set[NoticeCategory]: ...
+
+    @abstractmethod
+    def is_board_moderator(self, employee_no: int) -> bool:
+        """True when the employee may soft-delete other people's posts and comments."""

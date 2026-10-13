@@ -26,3 +26,6 @@ class DjangoWorkforceGateway(WorkforceGateway):
         if Department.objects.filter(head_id=employee_no).exists():
             categories.add(NoticeCategory.DEPARTMENT)
         return categories
+
+    def is_board_moderator(self, employee_no: int) -> bool:
+        return DjangoWorkforceQueryGateway().has_active_role(employee_no, MANAGEMENT_OFFICER_ROLE)

@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from board.infrastructure.models import NoticeCategoryModel
-from workforce.application.services import PAYROLL_MANAGER_ROLE
+from workforce.application.services import MANAGEMENT_OFFICER_ROLE, PAYROLL_MANAGER_ROLE
 from workforce.infrastructure.models import (
     Department,
     Employee,
@@ -305,3 +305,34 @@ def test_post_list_includes_active_comment_count_per_post() -> None:
 
     detail = client.get(f"/api/board/posts/{busy}/")
     assert detail.data["comment_count"] == 2
+
+
+@pytest.mark.django_db
+def test_management_officer_can_delete_but_not_edit_others_content() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    officer = create_employee(3003, "officer@example.com")
+    assign_role(officer, MANAGEMENT_OFFICER_ROLE, "경영 담당자")
+    officer_user = create_user(officer)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    post_id = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "제목", "content": "내용"},
+        format="json",
+    ).data["post_id"]
+    comment_id = client.post(
+        f"/api/board/posts/{post_id}/comments/", {"content": "댓글"}, format="json"
+    ).data["comment_id"]
+
+    client.force_authenticate(officer_user)
+    assert client.patch(
+        f"/api/board/posts/{post_id}/", {"title": "변경", "content": "변경"}, format="json"
+    ).status_code == 403
+    assert client.patch(
+        f"/api/board/comments/{comment_id}/", {"content": "변경"}, format="json"
+    ).status_code == 403
+
+    assert client.delete(f"/api/board/comments/{comment_id}/").status_code == 204
+    assert client.delete(f"/api/board/posts/{post_id}/").status_code == 204
+    assert client.get(f"/api/board/posts/{post_id}/").status_code == 404

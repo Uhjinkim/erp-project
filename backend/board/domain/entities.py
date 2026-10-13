@@ -48,9 +48,14 @@ class Post:
         self.content = content
 
     def soft_delete(
-        self, actor_employee_no: int, actor_is_admin: bool, deleted_at: datetime
+        self,
+        actor_employee_no: int,
+        actor_is_admin: bool,
+        deleted_at: datetime,
+        actor_is_moderator: bool = False,
     ) -> None:
-        self._require_editor(actor_employee_no, actor_is_admin)
+        if not actor_is_moderator:
+            self._require_editor(actor_employee_no, actor_is_admin)
         self.deleted_at = deleted_at
 
     def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:
@@ -81,9 +86,14 @@ class Comment:
         self.content = content
 
     def soft_delete(
-        self, actor_employee_no: int, actor_is_admin: bool, deleted_at: datetime
+        self,
+        actor_employee_no: int,
+        actor_is_admin: bool,
+        deleted_at: datetime,
+        actor_is_moderator: bool = False,
     ) -> None:
-        self._require_editor(actor_employee_no, actor_is_admin)
+        if not actor_is_moderator:
+            self._require_editor(actor_employee_no, actor_is_admin)
         self.deleted_at = deleted_at
 
     def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:

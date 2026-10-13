@@ -10,6 +10,8 @@
   - 비즈니스 규칙: <https://app.notion.com/p/3d78eced448d81528023db7f8dd1b49a>
   - 기능 명세: <https://app.notion.com/p/3d78eced448d8118bd7ce952069417ed>
 - 댓글/대댓글은 원문 기능 명세에 없는 기능이므로 기능 ID 부여 여부 결정 필요
+- `BD-006`에 "경영담당자(`MANAGEMENT_OFFICER`)는 타인의 게시글·댓글을 삭제할 수 있다(수정
+  불가)"를 추가할지 제품 결정 필요. 현재 구현은 이 규칙을 적용한 상태다.
 
 ## 저장소 명세·README
 

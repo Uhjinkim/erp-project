@@ -55,7 +55,13 @@ class CommentService:
 
     def delete_comment(self, comment_id: int, actor_employee_no: int, actor_is_admin: bool) -> None:
         comment = self._get_visible(comment_id)
-        comment.soft_delete(actor_employee_no, actor_is_admin, self.clock())
+        comment.soft_delete(
+            actor_employee_no,
+            actor_is_admin,
+            self.clock(),
+            actor_is_moderator=not actor_is_admin
+            and self.workforce.is_board_moderator(actor_employee_no),
+        )
         self.comments.save(comment)
 
     def list_comments(self, post_id: int, viewer_employee_no: int) -> list[Comment]:

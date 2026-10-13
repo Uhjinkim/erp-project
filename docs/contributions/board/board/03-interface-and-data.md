@@ -18,6 +18,9 @@
 - 게시글 응답에 `comment_count`를 포함한다. 삭제되지 않은 댓글·답글만 `board_comments`에서
   조회 시점에 서브쿼리로 계산하며 저장 컬럼은 없다(스키마 변경 아님). 프론트 목록은 1 이상일 때
   제목 옆에 `댓글 N`으로 표시한다.
+- 게시글·댓글 `DELETE`는 작성자, 시스템관리자(`is_superuser`), `MANAGEMENT_OFFICER` 역할
+  보유자가 호출할 수 있다. `PATCH`는 작성자와 시스템관리자만 가능하다(경영담당자는 403).
+  프론트는 `currentUser.roles`로 버튼 노출만 결정하고 실제 권한은 서버가 검사한다.
 - `notice-categories/eligible/`은 `{"categories": ["PAYROLL", ...]}` 형태이며, 비어 있으면
   프론트가 게시글 유형·공지 분류 선택창을 숨긴다.
 
