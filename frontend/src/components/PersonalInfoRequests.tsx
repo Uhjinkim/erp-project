@@ -5,12 +5,12 @@ import {
   listChangeRequests,
   processChangeRequest,
   updateMyContact,
-} from "../api/workforce"
+} from "../api/profile"
+import type { EmployeeDetail } from "../types/workforce"
 import type {
   ApprovalRequiredValues,
-  EmployeeDetail,
   PersonalInfoChangeRequest,
-} from "../types/workforce"
+} from "../types/profile"
 
 const fieldLabels: Record<keyof ApprovalRequiredValues, string> = {
   email: "사내 이메일",

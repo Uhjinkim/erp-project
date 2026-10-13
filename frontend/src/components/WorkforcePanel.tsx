@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 
-import { createDepartment, getEmployeeDetail, getMyEmployeeInfo, loadWorkforce } from "../api/workforce"
+import { createDepartment, getEmployeeDetail, loadWorkforce } from "../api/workforce"
+import { getMyEmployeeInfo } from "../api/profile"
 import type { CurrentUser } from "../types/auth"
 import type {
   DepartmentSummary,
