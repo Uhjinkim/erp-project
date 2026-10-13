@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from board.application.dto import CreatePostCommand, UpdatePostCommand
+from board.application.dto import CreatePostCommand, UpdatePostCommand, Viewer
 from board.application.ports import WorkforceGateway
 from board.domain.entities import Post, PostType
 from board.domain.exceptions import (
@@ -23,6 +23,13 @@ class BoardService:
         self.repository = repository
         self.workforce = workforce
         self.clock = clock
+
+    def viewer(self, employee_no: int, is_admin: bool) -> Viewer:
+        return Viewer(
+            employee_no=employee_no,
+            is_admin=is_admin,
+            is_moderator=not is_admin and self.workforce.is_board_moderator(employee_no),
+        )
 
     def create_post(self, command: CreatePostCommand) -> Post:
         self._ensure_active(command.writer_employee_no)
@@ -57,12 +64,9 @@ class BoardService:
 
     def delete_post(self, post_id: int, actor_employee_no: int, actor_is_admin: bool) -> None:
         post = self._get_visible(post_id)
+        viewer = self.viewer(actor_employee_no, actor_is_admin)
         post.soft_delete(
-            actor_employee_no,
-            actor_is_admin,
-            self.clock(),
-            actor_is_moderator=not actor_is_admin
-            and self.workforce.is_board_moderator(actor_employee_no),
+            actor_employee_no, actor_is_admin, self.clock(), actor_is_moderator=viewer.is_moderator
         )
         self.repository.save(post)
 
