@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Protocol
 
-from workforce.domain.history import HistoryEntry, TransferTarget
+from workforce.domain.history import HistoryChange, HistoryEntry, TransferTarget
 from workforce.domain.lifecycle import (
     EmploymentState,
     RetiredEmployee,
@@ -181,7 +181,13 @@ class EmploymentHistoryRepository(Protocol):
 
     def position_exists(self, position_code: str) -> bool: ...
 
-    def close_history(self, history_id: int, end_date: date) -> None: ...
+    def close_history(self, history_id: int, end_date: date | None) -> None:
+        """종료일을 바꾼다. None이면 다시 진행 중 이력이 된다."""
+        ...
+
+    def update_history(self, entry: HistoryEntry) -> None: ...
+
+    def delete_history(self, history_id: int) -> None: ...
 
     def add_history(self, employee_no: int, entry: HistoryEntry) -> int: ...
 
@@ -192,3 +198,15 @@ class EmploymentHistoryRepository(Protocol):
     def release_department_heads(self, employee_no: int, *, keep_dept_no: int) -> list[int]:
         """keep_dept_no 외 부서의 부서장 지정을 해제하고 해제한 부서번호를 반환한다."""
         ...
+
+    def restore_department_heads(self, employee_no: int, dept_nos: list[int]) -> list[int]:
+        """부서장이 비어 있는 부서만 다시 지정하고 복원한 부서번호를 반환한다."""
+        ...
+
+    def released_heads_for(self, employee_no: int, history_id: int) -> list[int]:
+        """이 이력의 발령·정정 기록에서 해제한 부서번호를 모은다."""
+        ...
+
+    def record_change(self, change: HistoryChange) -> None: ...
+
+    def changes(self, employee_no: int) -> list[HistoryChange]: ...

@@ -381,6 +381,23 @@ class TransferSerializer(serializers.Serializer):
     previous_base_salary = serializers.DecimalField(
         max_digits=15, decimal_places=2, min_value=0, required=False, allow_null=True
     )
+    reason = serializers.CharField(
+        max_length=500, required=False, allow_null=True, allow_blank=True
+    )
+
+
+class HistoryCorrectionSerializer(serializers.Serializer):
+    """FN-HR-010 최근 이력 정정 요청. 정정 후 값 전체와 사유를 받는다."""
+
+    start_date = serializers.DateField()
+    dept_no = serializers.IntegerField()
+    position_code = serializers.CharField(max_length=20)
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0)
+    reason = serializers.CharField(max_length=500)
+
+
+class HistoryCancellationSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500)
 
 
 class HistoryEntrySerializer(serializers.Serializer):
@@ -399,3 +416,26 @@ class HistoryEntrySerializer(serializers.Serializer):
 class TransferResultSerializer(serializers.Serializer):
     history = HistoryEntrySerializer(many=True)
     released_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
+    restored_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
+
+
+class HistoryValuesSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    end_date = serializers.DateField(allow_null=True)
+    dept_no = serializers.IntegerField()
+    position_code = serializers.CharField()
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+
+class HistoryChangeSerializer(serializers.Serializer):
+    """FN-HR-010 발령·정정·취소 기록 응답."""
+
+    history_id = serializers.IntegerField()
+    action = serializers.CharField()
+    before = HistoryValuesSerializer(allow_null=True)
+    after = HistoryValuesSerializer(allow_null=True)
+    reason = serializers.CharField(allow_null=True)
+    changed_by = serializers.IntegerField(allow_null=True)
+    changed_at = serializers.DateTimeField()
+    released_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
+    restored_head_dept_nos = serializers.ListField(child=serializers.IntegerField())

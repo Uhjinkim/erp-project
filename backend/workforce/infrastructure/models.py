@@ -125,6 +125,46 @@ class EmploymentHistory(models.Model):
         ordering = ["employee_id", "-start_date"]
 
 
+class EmploymentHistoryChange(models.Model):
+    """FN-HR-010 인사이력 발령·정정·취소 기록. 취소된 이력도 추적하도록 history_id는 FK가 아니다."""
+
+    class Action(models.TextChoices):
+        TRANSFER = "발령", "발령"
+        CORRECTION = "정정", "정정"
+        CANCELLATION = "취소", "취소"
+
+    change_id = models.BigAutoField(primary_key=True)
+    employee = models.ForeignKey(
+        Employee,
+        db_column="emp_no",
+        on_delete=models.RESTRICT,
+        related_name="employment_history_changes",
+    )
+    history_id = models.BigIntegerField()
+    action = models.CharField(max_length=10, choices=Action.choices)
+    before_values = models.JSONField(null=True, blank=True)
+    after_values = models.JSONField(null=True, blank=True)
+    released_head_dept_nos = models.JSONField(default=list, blank=True)
+    restored_head_dept_nos = models.JSONField(default=list, blank=True)
+    reason = models.CharField(max_length=500, null=True, blank=True)
+    changed_by = models.ForeignKey(
+        Employee,
+        db_column="changed_by_emp_no",
+        null=True,
+        blank=True,
+        on_delete=models.RESTRICT,
+        related_name="processed_employment_history_changes",
+    )
+    changed_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "emp_history_changes"
+        ordering = ["-changed_at", "-change_id"]
+        indexes = [
+            models.Index(fields=["employee", "history_id"], name="emp_hist_change_emp_hist_idx"),
+        ]
+
+
 class Role(models.Model):
     role_code = models.CharField(primary_key=True, max_length=30)
     role_name = models.CharField(max_length=50)
