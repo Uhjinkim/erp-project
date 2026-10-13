@@ -1,1 +1,1 @@
-export { BoardPanel } from "../../components/BoardPanel"
+export { BoardScreen } from "./BoardScreen"

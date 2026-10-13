@@ -20,7 +20,9 @@
   제목 옆에 `댓글 N`으로 표시한다.
 - 게시글·댓글 `DELETE`는 작성자, 시스템관리자(`is_superuser`), `MANAGEMENT_OFFICER` 역할
   보유자가 호출할 수 있다. `PATCH`는 작성자와 시스템관리자만 가능하다(경영담당자는 403).
-  프론트는 `currentUser.roles`로 버튼 노출만 결정하고 실제 권한은 서버가 검사한다.
+- 게시글·댓글 응답에 조회자 기준 `can_edit`·`can_delete`를 포함한다. 도메인
+  `AuthoredContent.can_be_edited_by`/`can_be_deleted_by`가 실제 수정·삭제 검사와 같은 규칙으로
+  계산한다. 프론트는 역할 문자열을 해석하지 않고 이 값으로만 버튼을 노출한다(안내서 9장 5항).
 - `notice-categories/eligible/`은 `{"categories": ["PAYROLL", ...]}` 형태이며, 비어 있으면
   프론트가 게시글 유형·공지 분류 선택창을 숨긴다.
 

@@ -1,5 +1,6 @@
 import type { ModuleRegistration } from "../../app/routing"
 
+// Post detail is a state of board-list (?postId=) so it stays out of the menu.
 export const registration: ModuleRegistration = {
   "id": "board",
   "label": "게시판",
@@ -11,16 +12,8 @@ export const registration: ModuleRegistration = {
       "title": "게시판·공지 목록"
     },
     {
-      "id": "board-detail",
-      "title": "게시글 상세"
-    },
-    {
       "id": "board-write",
-      "title": "일반글 작성"
-    },
-    {
-      "id": "notice-write",
-      "title": "권한별 공지 작성"
+      "title": "게시글 작성"
     }
   ]
 }
