@@ -69,6 +69,17 @@ class DjangoWorkforceQueryGateway:
         )
         return [EmployeeCandidate(item.employee_no, item.is_active_employee) for item in employees]
 
+    def parent_department_head(self, employee_no: int) -> EmployeeCandidate | None:
+        employee = Employee.objects.select_related("department__parent__head").filter(
+            employee_no=employee_no
+        ).first()
+        if employee is None or employee.department is None:
+            return None
+        parent = employee.department.parent
+        if parent is None or parent.head is None:
+            return None
+        return EmployeeCandidate(parent.head.employee_no, parent.head.is_active_employee)
+
     def employee_is_active(self, employee_no: int) -> bool:
         employee = Employee.objects.filter(employee_no=employee_no).first()
         return employee is not None and employee.is_active_employee

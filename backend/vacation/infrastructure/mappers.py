@@ -19,6 +19,7 @@ def request_to_entity(model: LeaveRequestModel) -> VacationRequest:
         approved_at=model.approved_at,
         reject_reason=model.reject_reason,
         request_reason=model.request_reason,
+        balance_deducted=model.balance_deducted,
     )
 
 
@@ -31,6 +32,8 @@ def history_to_entity(model: LeaveRequestHistoryModel) -> VacationHistory:
         actor_employee_no=model.actor_employee_no,
         reason=model.reason,
         changed_at=model.changed_at,
+        before_values=model.before_values,
+        after_values=model.after_values,
     )
 
 
