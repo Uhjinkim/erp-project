@@ -4,15 +4,15 @@ import type { CurrentUser } from "../types/auth"
 import { VacationPanel } from "../features/vacation"
 import { BoardScreen } from "../features/board"
 import { WorkforcePanel } from "../features/workforce"
-import { PayrollScreen } from "../features/payroll"
 import { EvaluationModule } from "../features/evaluation"
+import { PayrollScreen } from "../features/payroll"
 import { ProfileScreen } from "../features/profile"
 import { ConnectionStatus } from "../components/ConnectionStatus"
 import { EmptyState } from "../components/ui"
 import { environment } from "../config/environment"
 
 export function ModuleScreen({ route, user, connection }: { route: Route; user: CurrentUser | null; connection: ReturnType<typeof useConnection> }) {
-  if (route.screenId === "leave-apply") return <VacationPanel currentUser={user} connected={connection.vacationConnected} />
+  if (route.moduleId === "vacation") return <VacationPanel currentUser={user} connected={connection.vacationConnected} screenId={route.screenId} search={route.search} />
   if (route.screenId === "system-health") return <ConnectionStatus health={connection.health} checking={connection.checking} message={connection.message} simulatedOffline={connection.simulatedOffline} showDevelopmentControls={environment.connectionTestControls} onCheck={() => void connection.check()} onToggleOffline={connection.toggleOffline} />
   if (route.screenId === "home" || route.screenId === "manager-home") return <EmptyState title="업무 홈을 준비하고 있습니다">홈 카드와 집계 API는 기능 담당자가 연결합니다. 왼쪽 메뉴에서 현재 업무 화면을 이용하세요.</EmptyState>
   const implemented = ["board-list", "board-write", "employee-list", "evaluation-team", "evaluation-form", "evaluation-hr", "evaluation-mine", "my-profile"]
