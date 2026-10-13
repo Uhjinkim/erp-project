@@ -250,16 +250,17 @@ def test_history_reasons_use_korean_component_names_and_whole_won_amounts() -> N
         UpdateItemsCommand(
             actor_employee_no=9001,
             statement_id=statement_id,
+            # Submitted deduction-first: the reason still lists earnings first, one per line.
             items=[
-                PayrollItemInput(component_code="BASE_PAY", amount=Decimal("2300000.00")),
                 PayrollItemInput(component_code="NATIONAL_PENSION", amount=Decimal("103500.00")),
+                PayrollItemInput(component_code="BASE_PAY", amount=Decimal("2300000.00")),
             ],
         )
     )
     payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
 
     reasons = [entry.reason for entry in uow.histories.list_for_statement(statement_id)]
-    assert reasons == ["기본급 2,300,000원, 국민연금 103,500원", "차인지급액 2,196,500원 확정"]
+    assert reasons == ["기본급 2,300,000원\n국민연금 103,500원", "차인지급액 2,196,500원 확정"]
 
 
 def test_only_payroll_manager_can_view_history_details() -> None:
@@ -353,7 +354,7 @@ def test_payment_date_change_on_draft_is_recorded_and_blocked_once_confirmed() -
     )
     assert updated.payment_date == date(2026, 9, 24)
     assert uow.histories.list_for_statement(statement_id)[-1].reason == (
-        "지급일 2026-09-25 → 2026-09-24, 기본급 3,000,000원"
+        "지급일 2026-09-25 → 2026-09-24\n기본급 3,000,000원"
     )
 
     payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))

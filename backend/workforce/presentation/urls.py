@@ -1,8 +1,10 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from workforce.presentation.views import (
     DepartmentViewSet,
     EmployeeViewSet,
+    NewHireRegistrationView,
     PersonalInfoChangeRequestViewSet,
     PersonViewSet,
     PositionViewSet,
@@ -21,4 +23,7 @@ router.register(
     basename="personal-info-request",
 )
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("new-hires/", NewHireRegistrationView.as_view(), name="new-hire-registration"),
+    *router.urls,
+]

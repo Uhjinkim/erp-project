@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 from rest_framework import mixins, serializers, status, viewsets
@@ -5,7 +7,25 @@ from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from workforce.application.history import (
+    CancellationCommand,
+    CorrectionCommand,
+    EmploymentHistoryService,
+    TransferCommand,
+    TransferResult,
+)
+from workforce.application.lifecycle import EmployeeNotFound, EmploymentLifecycleService
+from workforce.application.onboarding import (
+    EmploymentCommand,
+    NewHireAccount,
+    NewHireRegistrationService,
+    RegisteredNewHire,
+    RegisterNewHireCommand,
+    RegistrationRetryExhausted,
+    RehireCommand,
+)
 from workforce.application.personal_info import (
     Actor,
     PersonalInfoService,
@@ -19,8 +39,13 @@ from workforce.application.services import (
     revoke_employee_role,
 )
 from workforce.domain.exceptions import WorkforceRuleViolation
+from workforce.domain.history import HistoryChange
+from workforce.domain.lifecycle import RetiredEmployeeCriteria
 from workforce.domain.personal_info import ApprovalRequiredValues, ChangeRequestStatus
+from workforce.infrastructure.accounts import DjangoAccountGateway
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
+from workforce.infrastructure.history import DjangoEmploymentHistoryRepository
+from workforce.infrastructure.lifecycle import DjangoEmploymentLifecycleRepository
 from workforce.infrastructure.models import (
     Department,
     Employee,
@@ -29,6 +54,7 @@ from workforce.infrastructure.models import (
     Position,
     Role,
 )
+from workforce.infrastructure.onboarding import DjangoNewHireUnitOfWork
 from workforce.infrastructure.personal_info import DjangoPersonalInfoRepository
 from workforce.presentation.permissions import (
     IsHRManager,
@@ -44,10 +70,22 @@ from workforce.presentation.serializers import (
     EmployeeDetailSerializer,
     EmployeeRoleSerializer,
     EmployeeSerializer,
+    HistoryCancellationSerializer,
+    HistoryChangeSerializer,
+    HistoryCorrectionSerializer,
+    HistoryEntrySerializer,
+    NewHireRegistrationSerializer,
     OwnContactUpdateSerializer,
     PersonSerializer,
     PositionSerializer,
+    RegisteredNewHireSerializer,
+    RehireSerializer,
+    RetiredEmployeeQuerySerializer,
+    RetiredEmployeeSerializer,
     RoleSerializer,
+    TerminationSerializer,
+    TransferResultSerializer,
+    TransferSerializer,
 )
 
 
@@ -55,6 +93,15 @@ class PersonViewSet(viewsets.ModelViewSet):
     queryset = Person.objects.all().order_by("person_id")
     serializer_class = PersonSerializer
     permission_classes = [IsAuthenticated, IsHRManager]
+
+    @action(detail=True, methods=["post"])
+    def rehire(self, request: Request, pk: str | None = None) -> Response:
+        """FN-HR-009: 퇴사한 Person에 새 사번으로 고용을 추가한다(HR-006)."""
+        serializer = RehireSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = employment_command_values(serializer.validated_data)
+        command = RehireCommand(person_id=int(pk), **data)
+        return run_registration(command, lambda service: service.rehire(command))
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
@@ -123,6 +170,125 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(EmployeeDetailSerializer(employee).data)
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="terminated",
+        permission_classes=[IsAuthenticated, IsHRManager],
+    )
+    def terminated(self, request: Request) -> Response:
+        """FN-HR-008: 퇴사자 조회. HR-005에 따라 인사관리자만 조회한다."""
+        query = RetiredEmployeeQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        try:
+            retired = lifecycle_service().list_retired(
+                RetiredEmployeeCriteria(**query.validated_data)
+            )
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(RetiredEmployeeSerializer(retired, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[IsAuthenticated, IsHRManager],
+    )
+    def terminate(self, request: Request, emp_no: str | None = None) -> Response:
+        """FN-HR-007: 퇴사 처리. 상태·퇴사일만 바꾸고 다른 기록은 보존한다(HR-005)."""
+        if not str(emp_no).isdigit():
+            return Response(
+                {"detail": "사원을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = TerminationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lifecycle_service().terminate(int(emp_no), serializer.validated_data["term_date"])
+        except WorkforceRuleViolation as exc:
+            return rule_violation_response(exc)
+        return Response(EmployeeDetailSerializer(self.get_queryset().get(employee_no=emp_no)).data)
+
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="history",
+        permission_classes=[IsAuthenticated, IsHRManager],
+    )
+    def history(self, request: Request, emp_no: str | None = None) -> Response:
+        """FN-HR-010 인사이력 조회(GET)와 발령 등록(POST). 인사관리자만 사용한다."""
+        if request.method == "GET":
+            return history_response(emp_no, lambda service, no: service.history(no))
+        serializer = TransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return history_response(
+            emp_no,
+            lambda service, no: service.transfer(
+                TransferCommand(
+                    employee_no=no,
+                    changed_by=request_employee_no(request),
+                    **serializer.validated_data,
+                )
+            ),
+            created=True,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"history/(?P<history_id>\d+)/correct",
+        permission_classes=[IsAuthenticated, IsHRManager],
+    )
+    def correct_history(
+        self, request: Request, emp_no: str | None = None, history_id: str | None = None
+    ) -> Response:
+        """FN-HR-010 진행 중인 최근 이력 정정. 사유 필수, 정정 전·후 값을 기록한다."""
+        serializer = HistoryCorrectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return history_response(
+            emp_no,
+            lambda service, no: service.correct(
+                CorrectionCommand(
+                    employee_no=no,
+                    history_id=int(history_id),
+                    changed_by=request_employee_no(request),
+                    **serializer.validated_data,
+                )
+            ),
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"history/(?P<history_id>\d+)/cancel",
+        permission_classes=[IsAuthenticated, IsHRManager],
+    )
+    def cancel_history(
+        self, request: Request, emp_no: str | None = None, history_id: str | None = None
+    ) -> Response:
+        """FN-HR-010 최근 발령 취소. 직전 이력을 다시 진행 중으로 되돌린다."""
+        serializer = HistoryCancellationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return history_response(
+            emp_no,
+            lambda service, no: service.cancel(
+                CancellationCommand(
+                    employee_no=no,
+                    history_id=int(history_id),
+                    reason=serializer.validated_data["reason"],
+                    changed_by=request_employee_no(request),
+                )
+            ),
+        )
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="history/changes",
+        permission_classes=[IsAuthenticated, IsHRManager],
+    )
+    def history_changes(self, request: Request, emp_no: str | None = None) -> Response:
+        """FN-HR-010 발령·정정·취소 기록 조회."""
+        return history_response(emp_no, lambda service, no: service.changes(no))
 
     @action(
         detail=True,
@@ -221,7 +387,7 @@ def request_actor(request: Request) -> Actor:
 
 
 def rule_violation_response(exc: WorkforceRuleViolation) -> Response:
-    if isinstance(exc, RequestNotFound):
+    if isinstance(exc, RequestNotFound | EmployeeNotFound):
         return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
     if isinstance(exc, ProcessingNotAllowed):
         return Response({"detail": exc.message}, status=status.HTTP_403_FORBIDDEN)
@@ -337,3 +503,68 @@ class PersonalInfoChangeRequestViewSet(viewsets.ViewSet):
         return ChangeRequestSerializer(
             data, many=many, context={"processable_ids": processable}
         ).data
+
+
+def employment_command_values(validated: dict[str, object]) -> dict[str, object]:
+    data = dict(validated)
+    account = data.pop("account", None)
+    data["role_codes"] = tuple(data["role_codes"])
+    data["account"] = NewHireAccount(**account) if account else None
+    return data
+
+
+def run_registration(
+    command: EmploymentCommand,
+    register: Callable[[NewHireRegistrationService], RegisteredNewHire],
+) -> Response:
+    service = NewHireRegistrationService(
+        DjangoNewHireUnitOfWork(), DjangoAccountGateway(), DjangoWorkforceQueryGateway()
+    )
+    try:
+        result = register(service)
+    except RegistrationRetryExhausted as exc:
+        return Response({"detail": exc.message}, status=status.HTTP_409_CONFLICT)
+    except WorkforceRuleViolation as exc:
+        return rule_violation_response(exc)
+    return Response(
+        RegisteredNewHireSerializer({"command": command, "result": result}).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+def history_response(
+    emp_no: str | None,
+    run: Callable[[EmploymentHistoryService, int], object],
+    *,
+    created: bool = False,
+) -> Response:
+    if not str(emp_no).isdigit():
+        return Response({"detail": "사원을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+    service = EmploymentHistoryService(DjangoEmploymentHistoryRepository(), timezone.localdate)
+    try:
+        result = run(service, int(emp_no))
+    except WorkforceRuleViolation as exc:
+        return rule_violation_response(exc)
+    if isinstance(result, TransferResult):
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(TransferResultSerializer(result).data, status=status_code)
+    if result and isinstance(result[0], HistoryChange):
+        return Response(HistoryChangeSerializer(result, many=True).data)
+    return Response(HistoryEntrySerializer(result, many=True).data)
+
+
+def lifecycle_service() -> EmploymentLifecycleService:
+    repository = DjangoEmploymentLifecycleRepository()
+    return EmploymentLifecycleService(repository, repository, timezone.localdate)
+
+
+class NewHireRegistrationView(APIView):
+    """FN-HR-006: 인사관리자의 신규 입사자 통합 등록(사원·최초 인사이력·역할·계정)."""
+
+    permission_classes = [IsAuthenticated, IsHRManager]
+
+    def post(self, request: Request) -> Response:
+        serializer = NewHireRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        command = RegisterNewHireCommand(**employment_command_values(serializer.validated_data))
+        return run_registration(command, lambda service: service.register(command))
