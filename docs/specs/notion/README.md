@@ -20,4 +20,13 @@ Markdown 스냅샷이다. Notion이 원문(source of truth)이며, 코드 변경
 
 - [Workforce 명세 구현 대응표](./workforce-implementation-map.md)
 
-마지막 원문 확인일: 2026-09-25
+## 기여 문서 부분 통합
+
+- [2026-10-12 통합 보고서](../../reports/2026-10-12_contribution-docs-integration.md)
+- [모듈 담당자 검토 의제](../../reports/2026-10-12_module-review-agenda.md)
+- [의제 공유 양식](../../guides/module-review-agenda.md)
+
+02·03·04 원문 확인일: 2026-10-12. 다른 스냅샷의 확인일은 각 문서의 메타데이터를 따른다.
+추가 정책·충돌 항목은 통합하지 않았으며, 현재 구현 기록은 제품 정책 승인·배포 완료를 의미하지 않는다.
+
+06·08은 2026-10-12 Notion 부분 반영과 재조회 확인을 완료했다. 반영 범위는 통합 보고서를 따른다.

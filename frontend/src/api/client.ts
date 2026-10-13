@@ -5,10 +5,25 @@ export class ApiError extends Error {
     message: string,
     readonly unavailable: boolean,
     readonly status?: number,
+    readonly fieldErrors: Record<string, string[]> = {},
   ) {
     super(message)
     this.name = "ApiError"
   }
+}
+
+const accessFailureListeners = new Set<() => void>()
+export function subscribeAccessFailure(listener: () => void) {
+  accessFailureListeners.add(listener)
+  return () => { accessFailureListeners.delete(listener) }
+}
+
+function fieldErrors(body: unknown): Record<string, string[]> {
+  if (!body || typeof body !== "object") return {}
+  return Object.fromEntries(Object.entries(body).flatMap(([key, value]) =>
+    key !== "detail" && Array.isArray(value)
+      ? [[key, value.filter((item): item is string => typeof item === "string")]]
+      : []))
 }
 
 function csrfToken(): string | undefined {
@@ -52,7 +67,10 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
     const body = await response.json().catch(() => null) as { detail?: string } | T | null
 
     if (!response.ok) {
-      throw new ApiError(errorDetail(body) ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
+      if ((response.status === 401 || response.status === 403) && !path.startsWith("/api/auth/")) {
+        accessFailureListeners.forEach((listener) => listener())
+      }
+      throw new ApiError(errorDetail(body) ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status, fieldErrors(body))
     }
 
     return body as T

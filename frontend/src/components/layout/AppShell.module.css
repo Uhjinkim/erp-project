@@ -1,0 +1,31 @@
+.shell { min-height: 100dvh; }
+.topbar { position: sticky; top: 0; z-index: var(--layer-header); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 56px; padding: 0 var(--space-5); background: var(--color-inverse); color: #fff; }
+.brand { color: #fff; font-weight: 700; letter-spacing: .08em; text-decoration: none; }
+.brand span { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-right: 10px; background: var(--color-action); }
+.user { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); font-size: var(--font-small); }
+.user button { color: #fff; }
+.layout { display: grid; grid-template-columns: 56px 220px minmax(0, 1fr); min-height: calc(100dvh - 56px); }
+.rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; background: #262626; }
+.rail a { display: grid; place-items: center; width: 56px; min-height: 48px; border-left: 3px solid transparent; color: #c6c6c6; text-decoration: none; font-size: 24px; }
+.rail a[aria-current] { background: #393939; border-left-color: #4589ff; color: #fff; }
+.sidebar { padding: var(--space-5) var(--space-3); border-right: 1px solid var(--color-border); background: var(--color-surface); }
+.sidebar h2 { margin: 0 8px 24px; font-size: 1.125rem; }
+.menu { display: grid; gap: 4px; margin-top: var(--space-4); }
+.menu a { display: block; padding: 12px 8px; color: var(--color-muted); text-decoration: none; overflow-wrap: anywhere; font-size: var(--font-small); }
+.menu a[aria-current] { background: #e8e8e8; color: var(--color-text); font-weight: 600; border-left: 3px solid var(--color-action); }
+.menu a:hover { background: var(--color-canvas); }
+.main { min-width: 0; display: grid; align-content: start; gap: var(--space-5); padding: var(--space-6); }
+.skip { position: fixed; top: -100px; left: 8px; z-index: 100; padding: 12px; background: #fff; }
+.skip:focus { top: 8px; }
+.mobileMenu { display: none; }
+@media (max-width: 1000px) { .layout { grid-template-columns: 56px 190px minmax(0, 1fr); } .main { padding: var(--space-5); } }
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 48px minmax(0, 1fr); }
+  .rail a { width: 48px; }
+  .sidebar { display: none; }
+  .sidebarOpen { display: block; grid-column: 2; }
+  .main { grid-column: 2; padding: var(--space-4); }
+  .mobileMenu { display: inline-flex; }
+  .topbar { padding: var(--space-2) var(--space-4); flex-wrap: wrap; }
+  .user { font-size: .75rem; }
+}
