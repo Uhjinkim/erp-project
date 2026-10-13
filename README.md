@@ -48,6 +48,10 @@ Python과 Frontend 의존성은 각각의 디렉터리와 lockfile로 관리합�
 기능 모듈을 별도 브랜치에서 개발할 때의 `dev` 동기화, 문서 초안 작성과 병합 절차는
 [기능 모듈 브랜치·문서 협업 가이드](docs/guides/module-branch-docs-workflow.md)를 따릅니다.
 
+확정 디자인에 따른 화면 배정, 디자인시스템 범위, 공통 토대 구현 순서와 팀원 작업 카드는
+[프론트엔드 모듈 작업 안내서](docs/guides/frontend-module-delivery.md)를 참고합니다.
+화면 분할은 Operations Graphite 39장을 참고했으며 확정 시안·버전과 대조한 뒤 배정합니다.
+
 ## 1. 필수 도구
 
 개발 PC에 다음 도구가 필요합니다.
