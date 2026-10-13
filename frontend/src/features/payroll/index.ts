@@ -1,1 +1,1 @@
-export { PayrollPanel } from "../../components/PayrollPanel"
+export { PayrollScreen } from "./PayrollScreen"

@@ -4,7 +4,7 @@ export const registration: ModuleRegistration = {
   "id": "payroll",
   "label": "급여",
   "icon": "▥",
-  "entry": "payroll-periods",
+  "entry": "payslip",
   "screens": [
     {
       "id": "payroll-periods",
