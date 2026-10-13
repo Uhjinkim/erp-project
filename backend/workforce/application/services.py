@@ -51,9 +51,12 @@ def resolve_vacation_approver(
     employee_no: int,
     gateway: WorkforceQueryGateway,
 ) -> int | None:
+    head = gateway.department_head(employee_no)
+    if head is not None and head.employee_no == employee_no:
+        head = gateway.parent_department_head(employee_no)
     return choose_vacation_approver(
         applicant_no=employee_no,
-        department_head=gateway.department_head(employee_no),
+        department_head=head,
         hr_approvers=gateway.active_role_holders(HR_LEAVE_APPROVER_ROLE, limit=2),
     )
 

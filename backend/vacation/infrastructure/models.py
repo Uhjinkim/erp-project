@@ -44,6 +44,7 @@ class LeaveRequestModel(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     reject_reason = models.CharField(max_length=255, null=True, blank=True)
     request_reason = models.TextField(null=True, blank=True)
+    balance_deducted = models.BooleanField(default=False)
 
     class Meta:
         db_table = "leave_requests"
@@ -76,6 +77,8 @@ class LeaveRequestHistoryModel(models.Model):
     actor_employee_no = models.IntegerField(db_column="actor_emp_no")
     reason = models.CharField(max_length=255, null=True, blank=True)
     changed_at = models.DateTimeField()
+    before_values = models.JSONField(null=True, blank=True)
+    after_values = models.JSONField(null=True, blank=True)
 
     class Meta:
         db_table = "leave_request_history"

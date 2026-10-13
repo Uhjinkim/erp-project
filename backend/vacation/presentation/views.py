@@ -71,8 +71,8 @@ class VacationAPIView(APIView):
 class VacationTypeListView(VacationAPIView):
     def get(self, request: Request) -> Response:
         try:
-            self.employee_no(request)
-            return Response([type_to_dict(item) for item in self.service.list_types()])
+            employee_no = self.employee_no(request)
+            return Response([type_to_dict(item) for item in self.service.list_types(employee_no)])
         except VacationError as error:
             return self.error_response(error)
 

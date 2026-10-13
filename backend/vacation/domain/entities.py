@@ -39,6 +39,7 @@ class VacationRequest:
     request_reason: str | None = None
     approved_at: datetime | None = None
     reject_reason: str | None = None
+    balance_deducted: bool = False
 
     def approve(self, actor_employee_no: int, approved_at: datetime) -> None:
         self._require_pending_approver(actor_employee_no)
@@ -111,3 +112,5 @@ class VacationHistory:
     actor_employee_no: int
     reason: str | None
     changed_at: datetime
+    before_values: dict[str, object] | None = None
+    after_values: dict[str, object] | None = None
