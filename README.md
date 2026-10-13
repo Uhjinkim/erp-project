@@ -51,6 +51,8 @@ Python과 Frontend 의존성은 각각의 디렉터리와 lockfile로 관리합�
 확정 디자인에 따른 화면 배정, 디자인시스템 범위, 공통 토대 구현 순서와 팀원 작업 카드는
 [프론트엔드 모듈 작업 안내서](docs/guides/frontend-module-delivery.md)를 참고합니다.
 화면 분할은 Operations Graphite 39장을 참고했으며 확정 시안·버전과 대조한 뒤 배정합니다.
+[구현된 공통 토대 사용 계약](docs/guides/frontend-foundation-contracts.md)에서 모듈 진입점과
+컴포넌트 사용법, 현재 연결된 화면과 후속 작업을 확인합니다.
 
 ## 1. 필수 도구
 
@@ -430,6 +432,7 @@ Frontend:
 cd frontend
 bun run lint
 bun run build
+bun run test
 ```
 
 기능 변경 시 가장 좁은 관련 테스트부터 실행하고 완료 전 영향받는 전체 테스트를 확인합니다.
