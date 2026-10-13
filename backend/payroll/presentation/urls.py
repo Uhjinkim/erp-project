@@ -6,6 +6,8 @@ from payroll.presentation.views import (
     ConfirmView,
     HistoryView,
     ItemsUpdateView,
+    PayrollTargetListView,
+    PayslipExcelView,
     StatementDetailView,
     StatementListCreateView,
 )
@@ -14,6 +16,8 @@ app_name = "payroll"
 
 urlpatterns = [
     path("components/", ComponentListView.as_view(), name="component-list"),
+    path("employees/", PayrollTargetListView.as_view(), name="employee-list"),
+    path("statements/<int:statement_id>/excel/", PayslipExcelView.as_view(), name="payslip-excel"),
     path("statements/", StatementListCreateView.as_view(), name="statement-list-create"),
     path("statements/<int:statement_id>/", StatementDetailView.as_view(), name="statement-detail"),
     path("statements/<int:statement_id>/items/", ItemsUpdateView.as_view(), name="items-update"),

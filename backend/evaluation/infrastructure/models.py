@@ -1,5 +1,6 @@
 from django.db import models
 
+from evaluation.infrastructure.fields import TimestampField
 from workforce.infrastructure.models import Department, Employee, Position
 
 
@@ -74,6 +75,19 @@ class EvaluationModel(models.Model):
                 fields=["employee", "eval_year"],
                 name="uq_evaluations_emp_no_eval_year",
             ),
+            # The shared DB already had this check limited to 작성중/확정; 0004 widens it.
+            models.CheckConstraint(
+                condition=models.Q(
+                    eval_status__in=[
+                        "작성중",
+                        "제출",
+                        "반려",
+                        "확정",
+                        "제외",
+                    ]
+                ),
+                name="chk_evaluations_status",
+            ),
         ]
 
 
@@ -112,7 +126,8 @@ class EvaluationHistoryModel(models.Model):
     )
     score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     reason = models.CharField(max_length=255, blank=True, default="")
-    changed_at = models.DateTimeField()
+    # README: changed_at timestamp (without time zone), like the other ERP tables.
+    changed_at = TimestampField()
 
     class Meta:
         db_table = "evaluation_history"

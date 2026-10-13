@@ -1,7 +1,9 @@
 from datetime import date
+from io import BytesIO
 
 import pytest
 from django.utils import timezone
+from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
 from accounts.models import User
@@ -249,3 +251,111 @@ def test_employee_cannot_view_another_employees_statement() -> None:
     client.force_authenticate(other_user)
     forbidden = client.get(f"/api/payroll/statements/{statement_id}/")
     assert forbidden.status_code == 403
+
+
+def payroll_manager(employee_no: int, email: str) -> tuple[Employee, User]:
+    employee = create_employee(employee_no, email)
+    user = create_user(employee, email)
+    role, _ = Role.objects.get_or_create(
+        role_code="PAYROLL_MANAGER", defaults={"role_name": "급여 담당자"}
+    )
+    employee.role_assignments.create(role=role, assigned_at=timezone.now())
+    return employee, user
+
+
+@pytest.mark.django_db
+def test_payroll_manager_without_hr_role_can_list_payroll_targets() -> None:
+    # Regression: the payroll screen used the HR-only workforce employee list (HR-001), so a
+    # payroll manager without HR_MANAGER got "이 작업을 수행할 권한이 없습니다." and could not pick
+    # anyone to pay.
+    employee = create_employee(1001, "employee@example.com")
+    employee_user = create_user(employee, "employee@example.com")
+    _, manager_user = payroll_manager(9001, "manager@example.com")
+    client = APIClient()
+
+    client.force_authenticate(manager_user)
+    assert client.get("/api/workforce/employees/").status_code == 403
+    targets = client.get("/api/payroll/employees/")
+    assert targets.status_code == 200
+    assert {"emp_no": 1001, "name": "사원 1001", "is_active": True}.items() <= next(
+        item for item in targets.json() if item["emp_no"] == 1001
+    ).items()
+    assert "email" not in targets.json()[0]
+
+    client.force_authenticate(employee_user)
+    assert client.get("/api/payroll/employees/").status_code == 403
+
+
+@pytest.mark.django_db
+def test_payment_date_can_be_set_on_create_and_changed_while_draft() -> None:
+    create_employee(1001, "employee@example.com")
+    _, manager_user = payroll_manager(9001, "manager@example.com")
+    seed_components()
+    client = APIClient()
+    client.force_authenticate(manager_user)
+
+    created = client.post(
+        "/api/payroll/statements/",
+        {"emp_no": 1001, "year": 2026, "month": 9, "payment_date": "2026-09-24"},
+        format="json",
+    )
+    assert created.status_code == 201, created.data
+    assert created.json()["payment_date"] == "2026-09-24"
+    statement_id = created.json()["statement_id"]
+
+    updated = client.put(
+        f"/api/payroll/statements/{statement_id}/items/",
+        {
+            "items": [{"component_code": "BASE_PAY", "amount": "3000000"}],
+            "payment_date": "2026-09-22",
+        },
+        format="json",
+    )
+    assert updated.status_code == 200, updated.data
+    assert updated.json()["payment_date"] == "2026-09-22"
+
+
+@pytest.mark.django_db
+def test_confirmed_payslip_downloads_as_excel_for_its_owner() -> None:
+    employee = create_employee(1001, "employee@example.com")
+    employee_user = create_user(employee, "employee@example.com")
+    _, manager_user = payroll_manager(9001, "manager@example.com")
+    seed_components()
+    PayrollComponentTypeModel.objects.create(code="BONUS", name="상여", category="지급")
+    client = APIClient()
+    client.force_authenticate(manager_user)
+    created = client.post(
+        "/api/payroll/statements/",
+        {
+            "emp_no": 1001,
+            "year": 2026,
+            "month": 9,
+            "items": [
+                {"component_code": "BASE_PAY", "amount": "3000000"},
+                {"component_code": "BONUS", "amount": "0"},
+                {"component_code": "NATIONAL_PENSION", "amount": "135000"},
+            ],
+        },
+        format="json",
+    )
+    statement_id = created.json()["statement_id"]
+
+    client.force_authenticate(employee_user)
+    assert client.get(f"/api/payroll/statements/{statement_id}/excel/").status_code == 403
+
+    client.force_authenticate(manager_user)
+    assert client.get(f"/api/payroll/statements/{statement_id}/excel/").status_code == 400
+    client.post(f"/api/payroll/statements/{statement_id}/confirm/", format="json")
+
+    client.force_authenticate(employee_user)
+    response = client.get(f"/api/payroll/statements/{statement_id}/excel/")
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    sheet = load_workbook(BytesIO(b"".join(response.streaming_content))).active
+    values = [cell for row in sheet.iter_rows(values_only=True) for cell in row if cell is not None]
+    assert "2026년 9월 급여명세서" in values
+    assert "기본급" in values and "국민연금" in values
+    assert "상여" not in values
+    assert 2865000 in values

@@ -21,13 +21,13 @@ function csrfToken(): string | undefined {
     .join("=")
 }
 
-function extractErrorMessage(body: unknown): string | undefined {
+// DRF는 업무 오류를 {"detail": "..."}로, 입력 검증 오류를 {"field": ["..."]}로 반환한다.
+function errorDetail(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined
-  const record = body as Record<string, unknown>
-  if (typeof record.detail === "string") return record.detail
-  const nonFieldErrors = record.non_field_errors
-  if (Array.isArray(nonFieldErrors) && typeof nonFieldErrors[0] === "string") {
-    return nonFieldErrors[0]
+  if ("detail" in body && typeof body.detail === "string") return body.detail
+  for (const value of Object.values(body)) {
+    const message = Array.isArray(value) ? value.find((item) => typeof item === "string") : value
+    if (typeof message === "string") return message
   }
   return undefined
 }
@@ -49,11 +49,10 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
       headers,
       signal: controller.signal,
     })
-    const body = await response.json().catch(() => null) as T | null
+    const body = await response.json().catch(() => null) as { detail?: string } | T | null
 
     if (!response.ok) {
-      const message = extractErrorMessage(body)
-      throw new ApiError(message ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
+      throw new ApiError(errorDetail(body) ?? "요청을 처리하지 못했습니다.", response.status >= 500, response.status)
     }
 
     return body as T

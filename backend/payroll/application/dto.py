@@ -1,12 +1,15 @@
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 
+from payroll.application.ports import PayrollTargetEmployee
 from payroll.domain.entities import (
     PayrollComponentType,
     PayrollHistory,
     PayrollItem,
     PayrollStatement,
 )
+from payroll.domain.policies import payslip_rank
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,8 @@ class CreateStatementCommand:
     year: int
     month: int
     items: list[PayrollItemInput] = field(default_factory=list)
+    # None means the settlement-date policy decides (매월 25일, 휴일이면 직전 평일).
+    payment_date: date | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,7 @@ class UpdateItemsCommand:
     actor_employee_no: int
     statement_id: int
     items: list[PayrollItemInput]
+    payment_date: date | None = None
 
 
 @dataclass(frozen=True)
@@ -52,7 +58,10 @@ def statement_to_dict(statement: PayrollStatement) -> dict[str, object]:
         "month": statement.period.month,
         "payment_date": statement.payment_date,
         "status": statement.status.value,
-        "items": [item_to_dict(item) for item in statement.items],
+        "items": [
+            item_to_dict(item)
+            for item in sorted(statement.items, key=lambda item: payslip_rank(item.component_code))
+        ],
         "total_earnings": statement.total_earnings,
         "total_deductions": statement.total_deductions,
         "net_pay": statement.net_pay,
@@ -97,4 +106,15 @@ def component_to_dict(component: PayrollComponentType) -> dict[str, object]:
         "name": component.name,
         "category": component.category.value,
         "is_active": component.is_active,
+    }
+
+
+def target_employee_to_dict(employee: PayrollTargetEmployee) -> dict[str, object]:
+    return {
+        "emp_no": employee.employee_no,
+        "name": employee.name,
+        "dept_no": employee.dept_no,
+        "dept_name": employee.dept_name,
+        "position_name": employee.position_name,
+        "is_active": employee.is_active,
     }

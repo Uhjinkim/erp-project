@@ -1,6 +1,14 @@
-from workforce.application.ports import RoleCommandGateway, WorkforceQueryGateway
+from workforce.application.ports import (
+    EmployeeProfileGateway,
+    RoleCommandGateway,
+    WorkforceQueryGateway,
+)
 from workforce.domain.exceptions import WorkforceRuleViolation
-from workforce.domain.policies import choose_vacation_approver
+from workforce.domain.policies import (
+    EmployeeProfile,
+    can_view_employee_info,
+    choose_vacation_approver,
+)
 
 HR_MANAGER_ROLE = "HR_MANAGER"
 HR_LEAVE_APPROVER_ROLE = "HR_LEAVE_APPROVER"
@@ -14,6 +22,29 @@ def employee_has_role(
     gateway: WorkforceQueryGateway,
 ) -> bool:
     return gateway.has_active_role(employee_no, role_code)
+
+
+def get_employee_profile(
+    employee_no: int,
+    gateway: EmployeeProfileGateway,
+) -> EmployeeProfile | None:
+    """FN-HR-001: 로그인한 사원 본인의 인사정보 조회."""
+    return gateway.employee_profile(employee_no)
+
+
+def can_view_employee(
+    viewer_no: int | None,
+    target_no: int,
+    gateway: WorkforceQueryGateway,
+) -> bool:
+    viewer_is_hr_manager = viewer_no is not None and gateway.has_active_role(
+        viewer_no, HR_MANAGER_ROLE
+    )
+    return can_view_employee_info(
+        viewer_no=viewer_no,
+        target_no=target_no,
+        viewer_is_hr_manager=viewer_is_hr_manager,
+    )
 
 
 def resolve_vacation_approver(

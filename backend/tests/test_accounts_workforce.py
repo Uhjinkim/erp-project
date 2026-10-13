@@ -11,6 +11,7 @@ from workforce.application.services import (
     HR_LEAVE_APPROVER_ROLE,
     HR_MANAGER_ROLE,
     employee_has_role,
+    get_employee_profile,
     resolve_vacation_approver,
 )
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
@@ -73,6 +74,71 @@ def test_email_login_creates_server_session_and_me_response() -> None:
     me_response = client.get("/api/auth/me/")
     assert me_response.status_code == 200
     assert me_response.json()["employee"]["name"] == "사원 1001"
+
+
+@pytest.mark.django_db
+def test_me_response_includes_own_profile_fields() -> None:
+    person = Person.objects.create(name="사원 1001", birth_date=date(1990, 5, 1), gender="F")
+    position, _ = Position.objects.get_or_create(
+        position_code="STAFF",
+        defaults={"position_name": "사원", "sort_order": 1},
+    )
+    employee = Employee.objects.create(
+        employee_no=1001,
+        person=person,
+        position=position,
+        tenure_status=Employee.TenureStatus.ACTIVE,
+        email="employee@example.com",
+        phone="010-0000-0000",
+        extension_no="1234",
+        address="서울시 강남구",
+        bank_code="004",
+        account_no="123-456-789",
+        hire_date=date(2024, 1, 1),
+    )
+    User.objects.create_user(
+        email="employee@example.com",
+        password="safe-test-password",
+        employee=employee,
+    )
+    client = APIClient()
+    client.force_authenticate(
+        User.objects.get(email="employee@example.com")
+    )
+
+    response = client.get("/api/auth/me/")
+
+    assert response.status_code == 200
+    profile = response.json()["employee"]
+    assert profile["birth_date"] == "1990-05-01"
+    assert profile["gender"] == "F"
+    assert profile["email"] == "employee@example.com"
+    assert profile["phone"] == "010-0000-0000"
+    assert profile["extension_no"] == "1234"
+    assert profile["address"] == "서울시 강남구"
+    assert profile["bank_code"] == "004"
+    assert profile["account_no"] == "123-456-789"
+    assert profile["hire_date"] == "2024-01-01"
+    assert profile["term_date"] is None
+
+
+@pytest.mark.django_db
+def test_get_employee_profile_reads_through_workforce_application_layer() -> None:
+    department = Department.objects.create(dept_no=10, dept_name="개발팀")
+    employee = create_employee(1001, "profile@example.com", department=department)
+
+    profile = get_employee_profile(employee.employee_no, DjangoWorkforceQueryGateway())
+
+    assert profile is not None
+    assert profile.employee_no == 1001
+    assert profile.name == "사원 1001"
+    assert profile.dept_name == "개발팀"
+    assert profile.email == "profile@example.com"
+
+
+@pytest.mark.django_db
+def test_get_employee_profile_returns_none_for_unknown_employee() -> None:
+    assert get_employee_profile(999999, DjangoWorkforceQueryGateway()) is None
 
 
 @pytest.mark.django_db

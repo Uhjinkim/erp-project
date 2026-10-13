@@ -1,5 +1,7 @@
 from functools import cached_property
+from io import BytesIO
 
+from django.http import FileResponse, HttpResponseBase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -17,6 +19,7 @@ from payroll.application.dto import (
     history_to_dict,
     history_to_summary_dict,
     statement_to_dict,
+    target_employee_to_dict,
 )
 from payroll.application.service import PayrollService
 from payroll.domain.exceptions import (
@@ -27,6 +30,7 @@ from payroll.domain.exceptions import (
 )
 from payroll.infrastructure.gateways import DjangoHolidayGateway, DjangoWorkforceGateway
 from payroll.infrastructure.repositories import DjangoPayrollUnitOfWork
+from payroll.presentation.exports import build_payslip_workbook, payslip_filename
 from payroll.presentation.permissions import IsPayrollManager
 from payroll.presentation.serializers import (
     CreateStatementSerializer,
@@ -129,6 +133,7 @@ class StatementListCreateView(PayrollAPIView):
                     year=data["year"],
                     month=data["month"],
                     items=input_items,
+                    payment_date=data["payment_date"],
                 )
             )
             return Response(self.serialize_statement(item), status=status.HTTP_201_CREATED)
@@ -161,6 +166,7 @@ class ItemsUpdateView(PayrollAPIView):
                     actor_employee_no=self.employee_no(request),
                     statement_id=statement_id,
                     items=items,
+                    payment_date=serializer.validated_data["payment_date"],
                 )
             )
             return Response(self.serialize_statement(item))
@@ -228,3 +234,32 @@ class HistoryView(PayrollAPIView):
 class ComponentListView(PayrollAPIView):
     def get(self, request: Request) -> Response:
         return Response([component_to_dict(item) for item in self.service.list_components()])
+
+
+class PayrollTargetListView(PayrollAPIView):
+    permission_classes = [IsAuthenticated, IsPayrollManager]
+
+    def get(self, request: Request) -> Response:
+        try:
+            targets = self.service.list_payroll_targets(self.employee_no(request))
+            return Response([target_employee_to_dict(item) for item in targets])
+        except PayrollError as error:
+            return self.error_response(error)
+
+
+class PayslipExcelView(PayrollAPIView):
+    def get(self, request: Request, statement_id: int) -> HttpResponseBase:
+        try:
+            statement = self.service.get_for_export(statement_id, self.employee_no(request))
+        except PayrollError as error:
+            return self.error_response(error)
+        employee = self.service.employee_displays({statement.employee_no}).get(
+            statement.employee_no
+        )
+        names = {component.code: component.name for component in self.service.list_components()}
+        return FileResponse(
+            BytesIO(build_payslip_workbook(statement, employee, names)),
+            as_attachment=True,
+            filename=payslip_filename(statement),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )

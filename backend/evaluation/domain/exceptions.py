@@ -10,6 +10,10 @@ class EvaluationYearNotAllowedError(InvalidEvaluationError):
     code = "eval_year_not_allowed"
 
 
+class InsufficientTenureError(InvalidEvaluationError):
+    code = "insufficient_tenure"
+
+
 class EvaluationPermissionError(EvaluationError):
     code = "permission_denied"
 
@@ -18,16 +22,16 @@ class SelfEvaluationError(EvaluationPermissionError):
     code = "self_evaluation_not_allowed"
 
 
-class HRManagerEvaluatorError(EvaluationPermissionError):
-    code = "hr_manager_cannot_evaluate"
-
-
 class NotDepartmentHeadError(EvaluationPermissionError):
     code = "evaluator_must_be_department_head"
 
 
 class ConfirmationNotAllowedError(EvaluationPermissionError):
     code = "confirmation_not_allowed"
+
+
+class OwnEvaluationActionError(EvaluationPermissionError):
+    code = "own_evaluation_action_not_allowed"
 
 
 class InactiveEmployeeError(EvaluationError):

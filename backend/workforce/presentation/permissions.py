@@ -2,7 +2,11 @@ from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
-from workforce.application.services import HR_MANAGER_ROLE, employee_has_role
+from workforce.application.services import (
+    HR_MANAGER_ROLE,
+    can_view_employee,
+    employee_has_role,
+)
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
 
 
@@ -19,6 +23,17 @@ class IsHRManager(BasePermission):
         return employee_no is not None and employee_has_role(
             employee_no,
             HR_MANAGER_ROLE,
+            DjangoWorkforceQueryGateway(),
+        )
+
+
+class IsSelfOrHRManager(BasePermission):
+    def has_object_permission(self, request: Request, view: APIView, obj: object) -> bool:
+        if request.user.is_superuser:
+            return True
+        return can_view_employee(
+            request_employee_no(request),
+            obj.employee_no,
             DjangoWorkforceQueryGateway(),
         )
 

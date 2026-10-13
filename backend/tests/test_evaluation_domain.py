@@ -20,7 +20,9 @@ from evaluation.domain.exceptions import (
     EvaluationPermissionError,
     EvaluationStateError,
     EvaluationYearNotAllowedError,
+    InsufficientTenureError,
     InvalidEvaluationError,
+    OwnEvaluationActionError,
     SelfEvaluationError,
 )
 from evaluation.domain.value_objects import (
@@ -28,7 +30,9 @@ from evaluation.domain.value_objects import (
     EvaluationYear,
     Grade,
     Reason,
+    add_months,
     ensure_creatable_year,
+    ensure_minimum_tenure,
     evaluation_basis_date,
 )
 
@@ -113,6 +117,25 @@ def test_basis_date_is_year_end_for_past_years_and_today_for_current_year() -> N
     today = date(2026, 10, 7)
     assert evaluation_basis_date("2025", today) == date(2025, 12, 31)
     assert evaluation_basis_date("2026", today) == today
+
+
+@pytest.mark.parametrize(
+    ("start", "expected"),
+    [
+        (date(2026, 9, 22), date(2026, 12, 22)),
+        (date(2025, 11, 30), date(2026, 2, 28)),
+        (date(2023, 11, 30), date(2024, 2, 29)),
+        (date(2026, 10, 31), date(2027, 1, 31)),
+    ],
+)
+def test_add_months_clamps_to_month_end(start: date, expected: date) -> None:
+    assert add_months(start, 3) == expected
+
+
+def test_minimum_tenure_requires_more_than_three_months() -> None:
+    ensure_minimum_tenure(date(2025, 9, 30), date(2025, 12, 31))
+    with pytest.raises(InsufficientTenureError):
+        ensure_minimum_tenure(date(2025, 9, 30), date(2025, 12, 30))  # exactly 3 months
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "x" * 256])
@@ -383,6 +406,21 @@ def test_target_cannot_handle_own_evaluation_as_hr() -> None:
         evaluation.return_for_revision(MEMBER, "사유", NOW)
     with pytest.raises(EvaluationPermissionError):
         evaluation.exclude(MEMBER, "사유", NOW)
+
+
+def test_evaluation_author_cannot_return_exclude_or_reassign() -> None:
+    """Same separation as confirmation (사용자 확인, 2026-10-12)."""
+    evaluation = submitted()
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.return_for_revision(HEAD, "사유", NOW)
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.exclude(HEAD, "사유", NOW)
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.reassign(HEAD, NEW_EVALUATOR, "사유", NOW)
+    # A former author who is no longer the evaluator is refused as well.
+    with pytest.raises(OwnEvaluationActionError):
+        evaluation.exclude(NEW_EVALUATOR, "사유", NOW, content_authors={NEW_EVALUATOR})
+    assert evaluation.status == EvaluationStatus.SUBMITTED
 
 
 def test_restorable_status_uses_latest_exclusion() -> None:

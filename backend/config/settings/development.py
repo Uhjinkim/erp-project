@@ -11,6 +11,15 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="unsafe-development-key")
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
 
+# The frontend (Vite) and nginx run on different ports than the backend, so a login
+# POST is a cross-origin request from Django's point of view unless these are trusted.
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+
 DEVELOPMENT_OFFLINE_MODE = env("DEVELOPMENT_OFFLINE_MODE")
 
 if DEVELOPMENT_OFFLINE_MODE:
@@ -41,3 +50,6 @@ HEALTH_CHECK_TIMEOUT_SECONDS = env("HEALTH_CHECK_TIMEOUT_SECONDS")
 VACATION_INTEGRATION_MODE = env("VACATION_INTEGRATION_MODE", default="development")
 VACATION_INTEGRATION_READY = True
 VACATION_DEVELOPMENT_EMPLOYEES = DEVELOPMENT_EMPLOYEES
+
+# Local testing only: set false when the test employees were all hired recently.
+EVALUATION_MINIMUM_TENURE_ENABLED = env.bool("EVALUATION_MINIMUM_TENURE_ENABLED", default=True)

@@ -1,6 +1,12 @@
+from contextlib import AbstractContextManager
 from typing import Protocol
 
-from workforce.domain.policies import EmployeeCandidate
+from workforce.domain.personal_info import (
+    ApprovalRequiredValues,
+    ChangeRequestStatus,
+    PersonalInfoChangeRequest,
+)
+from workforce.domain.policies import EmployeeCandidate, EmployeeProfile
 
 
 class WorkforceQueryGateway(Protocol):
@@ -9,6 +15,10 @@ class WorkforceQueryGateway(Protocol):
     def department_head(self, employee_no: int) -> EmployeeCandidate | None: ...
 
     def active_role_holders(self, role_code: str, *, limit: int) -> list[EmployeeCandidate]: ...
+
+
+class EmployeeProfileGateway(Protocol):
+    def employee_profile(self, employee_no: int) -> EmployeeProfile | None: ...
 
 
 class RoleCommandGateway(Protocol):
@@ -21,3 +31,37 @@ class RoleCommandGateway(Protocol):
     def assign_role(self, employee_no: int, role_code: str) -> int: ...
 
     def revoke_role(self, employee_no: int, assignment_id: int) -> bool: ...
+
+
+class PersonalInfoRepository(Protocol):
+    """HR-002/HR-003 개인정보 수정·변경 요청 저장소 포트."""
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def lock_employee(self, employee_no: int) -> None: ...
+
+    def is_active_employee(self, employee_no: int) -> bool: ...
+
+    def current_values(self, employee_no: int) -> ApprovalRequiredValues | None: ...
+
+    def email_in_use(self, email: str, *, exclude_employee_no: int) -> bool: ...
+
+    def has_pending_request(self, employee_no: int) -> bool: ...
+
+    def update_contact(self, employee_no: int, changes: dict[str, str | None]) -> None: ...
+
+    def apply_values(self, employee_no: int, values: ApprovalRequiredValues) -> None: ...
+
+    def update_login_email(self, employee_no: int, email: str) -> None: ...
+
+    def add_request(self, request: PersonalInfoChangeRequest) -> PersonalInfoChangeRequest: ...
+
+    def get_request(
+        self, request_id: int, *, for_update: bool = False
+    ) -> PersonalInfoChangeRequest | None: ...
+
+    def save_request(self, request: PersonalInfoChangeRequest) -> None: ...
+
+    def list_requests(
+        self, *, employee_no: int | None, status: ChangeRequestStatus | None
+    ) -> list[PersonalInfoChangeRequest]: ...
