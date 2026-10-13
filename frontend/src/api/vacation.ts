@@ -1,5 +1,6 @@
 import { requestJson } from "./client"
 import { environment } from "../config/environment"
+import type { VacationAction, VacationHistory, VacationInput, VacationRequest, VacationType } from "../types/vacation"
 
 export function requestVacation<T>(path: string, employeeNo: number, options: RequestInit = {}) {
   const headers = new Headers(options.headers)
@@ -7,3 +8,27 @@ export function requestVacation<T>(path: string, employeeNo: number, options: Re
   if (environment.authMode === "development") headers.set("X-Employee-No", String(employeeNo))
   return requestJson<T>(`/api/vacations/${path}`, { ...options, headers })
 }
+
+export const listVacationTypes = (employeeNo: number) =>
+  requestVacation<VacationType[]>("types/", employeeNo)
+
+export const listMyVacations = (employeeNo: number) =>
+  requestVacation<VacationRequest[]>("requests/", employeeNo)
+
+export const listVacationApprovals = (employeeNo: number) =>
+  requestVacation<VacationRequest[]>("approvals/", employeeNo)
+
+export const getVacationHistory = (employeeNo: number, requestId: number) =>
+  requestVacation<VacationHistory[]>(`requests/${requestId}/history/`, employeeNo)
+
+export const createVacation = (employeeNo: number, input: VacationInput) =>
+  requestVacation<VacationRequest>("requests/", employeeNo, { method: "POST", body: JSON.stringify(input) })
+
+export const resubmitVacation = (employeeNo: number, requestId: number, input: VacationInput) =>
+  requestVacation<VacationRequest>(`requests/${requestId}/resubmit/`, employeeNo, { method: "PUT", body: JSON.stringify(input) })
+
+export const changeVacationStatus = (employeeNo: number, requestId: number, action: VacationAction, reason?: string) =>
+  requestVacation<VacationRequest>(`requests/${requestId}/${action}/`, employeeNo, {
+    method: "POST",
+    body: action === "reject" || action === "recall" ? JSON.stringify({ reason: reason?.trim() }) : undefined,
+  })
