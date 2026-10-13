@@ -80,15 +80,20 @@ class FakeWorkforce(WorkforceGateway):
         self,
         active_employees: set[int],
         eligible: dict[int, set[NoticeCategory]] | None = None,
+        moderators: set[int] | None = None,
     ) -> None:
         self.active_employees = active_employees
         self.eligible = eligible or {}
+        self.moderators = moderators or set()
 
     def is_active_employee(self, employee_no: int) -> bool:
         return employee_no in self.active_employees
 
     def eligible_notice_categories(self, employee_no: int) -> set[NoticeCategory]:
         return self.eligible.get(employee_no, set())
+
+    def is_board_moderator(self, employee_no: int) -> bool:
+        return employee_no in self.moderators
 
 
 def make_service(
@@ -347,3 +352,40 @@ def test_deleted_comment_disappears_from_list() -> None:
     )
     comments.delete_comment(comment.comment_id, 1001, False)
     assert comments.list_comments(post.post_id, 1001) == []
+
+
+def test_moderator_can_soft_delete_others_post_and_comment_but_not_edit() -> None:
+    posts = FakePosts()
+    workforce = FakeWorkforce({1001, 3003}, moderators={3003})
+    board = BoardService(repository=posts, workforce=workforce, clock=lambda: NOW)
+    post = board.create_post(
+        CreatePostCommand(
+            writer_employee_no=1001, post_type=PostType.GENERAL, title="제목", content="내용"
+        )
+    )
+    comments = CommentService(
+        comments=FakeComments(), posts=posts, workforce=workforce, clock=lambda: NOW
+    )
+    comment = comments.create_comment(
+        CreateCommentCommand(post_id=post.post_id, writer_employee_no=1001, content="댓글")
+    )
+
+    with pytest.raises(BoardPermissionError):
+        board.update_post(
+            UpdatePostCommand(
+                post_id=post.post_id, actor_employee_no=3003, actor_is_admin=False,
+                title="변경", content="변경",
+            )
+        )
+    with pytest.raises(BoardPermissionError):
+        comments.update_comment(
+            UpdateCommentCommand(
+                comment_id=comment.comment_id, actor_employee_no=3003, actor_is_admin=False,
+                content="변경",
+            )
+        )
+
+    comments.delete_comment(comment.comment_id, 3003, False)
+    assert comments.list_comments(post.post_id, 1001) == []
+    board.delete_post(post.post_id, 3003, False)
+    assert board.list_posts(1001) == []
