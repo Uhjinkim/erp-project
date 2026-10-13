@@ -46,6 +46,7 @@ def post_to_dict(post: Post) -> dict[str, object]:
         "notice_category": post.notice_category.value if post.notice_category else None,
         "title": post.title,
         "content": post.content,
+        "comment_count": post.comment_count,
         "created_at": post.created_at,
         "updated_at": post.updated_at,
     }

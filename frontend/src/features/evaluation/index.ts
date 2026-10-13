@@ -1,1 +1,1 @@
-export { EvaluationPanel } from "../../components/EvaluationPanel"
+export { EvaluationModule } from "./EvaluationModule"

@@ -15,7 +15,6 @@ class NoticeCategory(StrEnum):
     MANAGEMENT = "MANAGEMENT"
     HR = "HR"
     PAYROLL = "PAYROLL"
-    DEPARTMENT = "DEPARTMENT"
 
 
 @dataclass
@@ -30,6 +29,7 @@ class Post:
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
     writer_name: str | None = None
+    comment_count: int = 0
 
     def __post_init__(self) -> None:
         PostTitle(self.title)
@@ -47,9 +47,14 @@ class Post:
         self.content = content
 
     def soft_delete(
-        self, actor_employee_no: int, actor_is_admin: bool, deleted_at: datetime
+        self,
+        actor_employee_no: int,
+        actor_is_admin: bool,
+        deleted_at: datetime,
+        actor_is_moderator: bool = False,
     ) -> None:
-        self._require_editor(actor_employee_no, actor_is_admin)
+        if not actor_is_moderator:
+            self._require_editor(actor_employee_no, actor_is_admin)
         self.deleted_at = deleted_at
 
     def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:
@@ -80,9 +85,14 @@ class Comment:
         self.content = content
 
     def soft_delete(
-        self, actor_employee_no: int, actor_is_admin: bool, deleted_at: datetime
+        self,
+        actor_employee_no: int,
+        actor_is_admin: bool,
+        deleted_at: datetime,
+        actor_is_moderator: bool = False,
     ) -> None:
-        self._require_editor(actor_employee_no, actor_is_admin)
+        if not actor_is_moderator:
+            self._require_editor(actor_employee_no, actor_is_admin)
         self.deleted_at = deleted_at
 
     def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:
