@@ -265,3 +265,43 @@ def test_eligible_notice_categories_reflects_role_assignment() -> None:
     response = client.get("/api/board/notice-categories/eligible/")
     assert response.status_code == 200
     assert response.data["categories"] == ["PAYROLL"]
+
+
+@pytest.mark.django_db
+def test_post_list_includes_active_comment_count_per_post() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    other = create_employee(2002, "other@example.com")
+    other_user = create_user(other)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    busy = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "댓글 많은 글", "content": "내용"},
+        format="json",
+    ).data["post_id"]
+    quiet = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "댓글 없는 글", "content": "내용"},
+        format="json",
+    ).data["post_id"]
+
+    first = client.post(
+        f"/api/board/posts/{busy}/comments/", {"content": "첫 댓글"}, format="json"
+    ).data["comment_id"]
+    client.post(
+        f"/api/board/posts/{busy}/comments/",
+        {"content": "답글", "parent_comment_id": first},
+        format="json",
+    )
+    removed = client.post(
+        f"/api/board/posts/{busy}/comments/", {"content": "곧 삭제"}, format="json"
+    ).data["comment_id"]
+    client.delete(f"/api/board/comments/{removed}/")
+
+    client.force_authenticate(other_user)
+    listing = client.get("/api/board/posts/").data
+    counts = {item["post_id"]: item["comment_count"] for item in listing}
+    assert counts == {busy: 2, quiet: 0}
+
+    detail = client.get(f"/api/board/posts/{busy}/")
+    assert detail.data["comment_count"] == 2

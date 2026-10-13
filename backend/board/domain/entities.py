@@ -30,6 +30,7 @@ class Post:
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
     writer_name: str | None = None
+    comment_count: int = 0
 
     def __post_init__(self) -> None:
         PostTitle(self.title)

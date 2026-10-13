@@ -10,6 +10,7 @@ export type Post = {
   notice_category: NoticeCategory | null
   title: string
   content: string
+  comment_count: number
   created_at: string
   updated_at: string | null
 }

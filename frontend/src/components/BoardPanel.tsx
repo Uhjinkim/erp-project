@@ -532,6 +532,11 @@ export function BoardPanel({ enabled, currentUser }: BoardPanelProps) {
                   <span className="badge">{post.post_type}</span>
                   {post.notice_category && <strong> {noticeCategoryLabels[post.notice_category]}</strong>}
                   <strong> {post.title}</strong>
+                  {post.comment_count > 0 && (
+                    <span className="board-comment-count" aria-label={`댓글 ${post.comment_count}개`}>
+                      댓글 {post.comment_count}
+                    </span>
+                  )}
                 </div>
                 <span className="request-id">#{post.post_id}</span>
               </div>
