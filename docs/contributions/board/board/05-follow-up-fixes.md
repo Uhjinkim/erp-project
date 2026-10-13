@@ -7,7 +7,9 @@
   `prompt()`를 지원하지 않거나 막는 환경에서는 `null`이 반환되어 요청 없이 종료됐다. 백엔드
   `PATCH /api/board/comments/<id>/`는 테스트상 정상이었다.
 - 해결: `window.prompt` 의존을 제거하고 게시글 수정과 같은 인라인 입력 폼(저장/취소)으로
-  교체했다. 댓글과 답글 모두 적용했다(`frontend/src/components/BoardPanel.tsx`).
+  교체했다. 댓글과 답글 모두 적용했다(당시 `BoardPanel.tsx`, 현재
+  `features/board/components/CommentThread.tsx`). 이후 삭제 확인도 같은 이유로 `window.confirm`
+  대신 공용 `ConfirmDialog`로 바꿨다.
 
 ## 공지 작성 권한이 없는 사원에게 유형·분류 선택창이 노출됨
 
@@ -19,5 +21,5 @@
     않는다(`backend/board/presentation/views.py`, `urls.py`).
   - Frontend: 로그인 사원의 작성 가능 분류를 조회해 목록이 비어 있으면 선택창을 숨기고
     게시글 유형을 `일반`으로 고정한다. 공지 분류 선택지도 전체 4종이 아니라 작성 가능한
-    분류만 보여준다(`frontend/src/api/board.ts`, `BoardPanel.tsx`).
+    분류만 보여준다(`frontend/src/api/board.ts`, 현재 `features/board/screens/`).
   - 테스트: 역할 배정 여부에 따른 응답을 검증하는 API 테스트를 추가했다.

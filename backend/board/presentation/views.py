@@ -13,6 +13,7 @@ from board.application.dto import (
     CreatePostCommand,
     UpdateCommentCommand,
     UpdatePostCommand,
+    Viewer,
     comment_to_dict,
     post_to_dict,
 )
@@ -65,6 +66,9 @@ class BoardAPIView(APIView):
     def is_admin(self, request: Request) -> bool:
         return bool(request.user.is_superuser)
 
+    def viewer(self, request: Request) -> Viewer:
+        return self.service.viewer(self.employee_no(request), self.is_admin(request))
+
     def error_response(self, error: BoardError) -> Response:
         response_status = status.HTTP_400_BAD_REQUEST
         if isinstance(error, (BoardPermissionError, NoticeCategoryNotAllowedError)):
@@ -89,7 +93,8 @@ class PostListCreateView(BoardAPIView):
         try:
             employee_no = self.employee_no(request)
             posts = self.service.list_posts(employee_no)
-            return Response([post_to_dict(post) for post in posts])
+            viewer = self.viewer(request)
+            return Response([post_to_dict(post, viewer) for post in posts])
         except BoardError as error:
             return self.error_response(error)
 
@@ -109,7 +114,9 @@ class PostListCreateView(BoardAPIView):
                     notice_category=NoticeCategory(notice_category) if notice_category else None,
                 )
             )
-            return Response(post_to_dict(item), status=status.HTTP_201_CREATED)
+            return Response(
+                post_to_dict(item, self.viewer(request)), status=status.HTTP_201_CREATED
+            )
         except BoardError as error:
             return self.error_response(error)
 
@@ -119,7 +126,7 @@ class PostDetailView(BoardAPIView):
         try:
             employee_no = self.employee_no(request)
             item = self.service.get_post(post_id, employee_no)
-            return Response(post_to_dict(item))
+            return Response(post_to_dict(item, self.viewer(request)))
         except BoardError as error:
             return self.error_response(error)
 
@@ -138,7 +145,7 @@ class PostDetailView(BoardAPIView):
                     content=data["content"],
                 )
             )
-            return Response(post_to_dict(item))
+            return Response(post_to_dict(item, self.viewer(request)))
         except BoardError as error:
             return self.error_response(error)
 
@@ -156,7 +163,8 @@ class CommentListCreateView(BoardAPIView):
         try:
             employee_no = self.employee_no(request)
             comments = self.comment_service.list_comments(post_id, employee_no)
-            return Response([comment_to_dict(comment) for comment in comments])
+            viewer = self.viewer(request)
+            return Response([comment_to_dict(comment, viewer) for comment in comments])
         except BoardError as error:
             return self.error_response(error)
 
@@ -174,7 +182,9 @@ class CommentListCreateView(BoardAPIView):
                     parent_comment_id=data.get("parent_comment_id"),
                 )
             )
-            return Response(comment_to_dict(item), status=status.HTTP_201_CREATED)
+            return Response(
+                comment_to_dict(item, self.viewer(request)), status=status.HTTP_201_CREATED
+            )
         except BoardError as error:
             return self.error_response(error)
 
@@ -194,7 +204,7 @@ class CommentDetailView(BoardAPIView):
                     content=data["content"],
                 )
             )
-            return Response(comment_to_dict(item))
+            return Response(comment_to_dict(item, self.viewer(request)))
         except BoardError as error:
             return self.error_response(error)
 

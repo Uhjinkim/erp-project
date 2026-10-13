@@ -336,3 +336,33 @@ def test_management_officer_can_delete_but_not_edit_others_content() -> None:
     assert client.delete(f"/api/board/comments/{comment_id}/").status_code == 204
     assert client.delete(f"/api/board/posts/{post_id}/").status_code == 204
     assert client.get(f"/api/board/posts/{post_id}/").status_code == 404
+
+
+@pytest.mark.django_db
+def test_responses_expose_viewer_specific_edit_and_delete_permissions() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    other_user = create_user(create_employee(2002, "other@example.com"))
+    officer = create_employee(3003, "officer@example.com")
+    assign_role(officer, MANAGEMENT_OFFICER_ROLE, "경영 담당자")
+    officer_user = create_user(officer)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    created = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "제목", "content": "내용"},
+        format="json",
+    )
+    assert (created.data["can_edit"], created.data["can_delete"]) == (True, True)
+    post_id = created.data["post_id"]
+    client.post(f"/api/board/posts/{post_id}/comments/", {"content": "댓글"}, format="json")
+
+    expected = {other_user: (False, False), officer_user: (False, True)}
+    for user, flags in expected.items():
+        client.force_authenticate(user)
+        post = client.get(f"/api/board/posts/{post_id}/").data
+        assert (post["can_edit"], post["can_delete"]) == flags
+        listed = client.get("/api/board/posts/").data[0]
+        assert (listed["can_edit"], listed["can_delete"]) == flags
+        comment = client.get(f"/api/board/posts/{post_id}/comments/").data[0]
+        assert (comment["can_edit"], comment["can_delete"]) == flags

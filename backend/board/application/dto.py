@@ -37,8 +37,25 @@ class UpdateCommentCommand:
     content: str
 
 
-def post_to_dict(post: Post) -> dict[str, object]:
+@dataclass(frozen=True)
+class Viewer:
+    employee_no: int
+    is_admin: bool
+    is_moderator: bool
+
+
+def _permissions(item: Post | Comment, viewer: Viewer) -> dict[str, bool]:
     return {
+        "can_edit": item.can_be_edited_by(viewer.employee_no, viewer.is_admin),
+        "can_delete": item.can_be_deleted_by(
+            viewer.employee_no, viewer.is_admin, viewer.is_moderator
+        ),
+    }
+
+
+def post_to_dict(post: Post, viewer: Viewer) -> dict[str, object]:
+    return {
+        **_permissions(post, viewer),
         "post_id": post.post_id,
         "writer_employee_no": post.writer_employee_no,
         "writer_name": post.writer_name,
@@ -52,8 +69,9 @@ def post_to_dict(post: Post) -> dict[str, object]:
     }
 
 
-def comment_to_dict(comment: Comment) -> dict[str, object]:
+def comment_to_dict(comment: Comment, viewer: Viewer) -> dict[str, object]:
     return {
+        **_permissions(comment, viewer),
         "comment_id": comment.comment_id,
         "post_id": comment.post_id,
         "writer_employee_no": comment.writer_employee_no,
