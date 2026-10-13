@@ -16,6 +16,7 @@ from payroll.application.ports import (
     WorkforceGateway,
 )
 from payroll.domain.entities import (
+    ComponentCategory,
     PayrollAction,
     PayrollComponentType,
     PayrollHistory,
@@ -100,7 +101,7 @@ class PayrollService:
                 statement,
                 PayrollAction.ITEMS_UPDATED,
                 command.actor_employee_no,
-                reason=self._truncate_reason(", ".join(changes)),
+                reason=self._truncate_reason("\n".join(changes)),
             )
             return statement
 
@@ -211,9 +212,16 @@ class PayrollService:
         return resolved
 
     def _items_summary(self, resolved: list[tuple[PayrollComponentType, PayrollItem]]) -> str:
-        ordered = sorted(resolved, key=lambda pair: payslip_rank(pair[0].code))
-        return self._truncate_reason(
-            ", ".join(f"{component.name} {_format_won(item.amount)}" for component, item in ordered)
+        # One line per item: earnings before deductions, each group in payslip order.
+        ordered = sorted(
+            resolved,
+            key=lambda pair: (
+                pair[1].category != ComponentCategory.EARNING,
+                payslip_rank(pair[0].code),
+            ),
+        )
+        return "\n".join(
+            f"{component.name} {_format_won(item.amount)}" for component, item in ordered
         )
 
     def _truncate_reason(self, reason: str) -> str:
