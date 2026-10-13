@@ -92,6 +92,15 @@ class FakeBalances(LeaveBalanceGateway):
     def remaining_days(self, employee_no: int, type_id: str) -> Decimal | None:
         return self.remaining
 
+    def deduct(self, employee_no: int, type_id: str, days: Decimal) -> bool:
+        if days > self.remaining:
+            raise InsufficientLeaveDaysError("잔여일수 부족")
+        self.remaining -= days
+        return True
+
+    def restore(self, employee_no: int, type_id: str, days: Decimal) -> None:
+        self.remaining += days
+
 
 def command(days: str = "1.00") -> RequestVacationCommand:
     return RequestVacationCommand(

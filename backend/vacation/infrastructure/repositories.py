@@ -29,6 +29,7 @@ class DjangoVacationRequestRepository(VacationRequestRepository):
             approved_at=request.approved_at,
             reject_reason=request.reject_reason,
             request_reason=request.request_reason,
+            balance_deducted=request.balance_deducted,
         )
         return request_to_entity(model)
 
@@ -52,6 +53,7 @@ class DjangoVacationRequestRepository(VacationRequestRepository):
             approved_at=request.approved_at,
             reject_reason=request.reject_reason,
             request_reason=request.request_reason,
+            balance_deducted=request.balance_deducted,
         )
         if not updated:
             raise VacationRequestNotFoundError("휴가 신청을 찾을 수 없습니다.")
@@ -78,6 +80,8 @@ class DjangoVacationHistoryRepository(VacationHistoryRepository):
             actor_employee_no=history.actor_employee_no,
             reason=history.reason,
             changed_at=history.changed_at,
+            before_values=history.before_values,
+            after_values=history.after_values,
         )
 
     def list_for_request(self, request_id: int) -> list[VacationHistory]:
