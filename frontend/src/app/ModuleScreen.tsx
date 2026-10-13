@@ -5,7 +5,7 @@ import { VacationPanel } from "../features/vacation"
 import { BoardScreen } from "../features/board"
 import { WorkforcePanel } from "../features/workforce"
 import { EvaluationPanel } from "../features/evaluation"
-=======
+
 import { PayrollScreen } from "../features/payroll"
 import { EvaluationModule } from "../features/evaluation"
 >>>>>>> a904f5acc9ac3a4da013e5d408cde297d569aac3
