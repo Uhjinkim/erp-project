@@ -6,7 +6,7 @@ from workforce.application.services import (
     PAYROLL_MANAGER_ROLE,
 )
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
-from workforce.infrastructure.models import Department, Employee
+from workforce.infrastructure.models import Employee
 
 
 class DjangoWorkforceGateway(WorkforceGateway):
@@ -23,8 +23,6 @@ class DjangoWorkforceGateway(WorkforceGateway):
             categories.add(NoticeCategory.HR)
         if gateway.has_active_role(employee_no, PAYROLL_MANAGER_ROLE):
             categories.add(NoticeCategory.PAYROLL)
-        if Department.objects.filter(head_id=employee_no).exists():
-            categories.add(NoticeCategory.DEPARTMENT)
         return categories
 
     def is_board_moderator(self, employee_no: int) -> bool:

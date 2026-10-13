@@ -34,8 +34,11 @@
   `board_posts.deleted_at` 컬럼 추가, `board_comments` 신규 테이블 생성.
 - 적용 상태: `sqlmigrate`로 DDL을 먼저 공개하고 사용자 승인 후 공유 개발 DB
   (`erp_dev.public`)에 `migrate board`로 적용 완료(2026-10-01).
-- `board_notice_categories`는 빈 테이블이다. 코드 4건의 시드 전까지 공지 작성은 FK 제약으로
-  운영 DB에서 실패한다.
+- `board/migrations/0003_seed_notice_categories.py`: `board_notice_categories`에
+  `MANAGEMENT`/경영, `HR`/인사, `PAYROLL`/급여 세 행을 `get_or_create`로 넣는 데이터
+  마이그레이션(기존 행은 덮어쓰지 않음, 역방향은 noop). 사용자 요청에 따라 공유 개발 DB
+  (`erp_dev.public`)에 `migrate board`로 적용 완료(2026-10-13). 적용 전 공지 게시글이 없어
+  기존 데이터 영향은 없었다.
 
 ## 환경변수·인프라 영향
 

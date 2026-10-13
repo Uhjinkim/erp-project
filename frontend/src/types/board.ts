@@ -1,6 +1,6 @@
 export type PostType = "일반" | "공지"
 
-export type NoticeCategory = "MANAGEMENT" | "HR" | "PAYROLL" | "DEPARTMENT"
+export type NoticeCategory = "MANAGEMENT" | "HR" | "PAYROLL"
 
 export type Post = {
   post_id: number

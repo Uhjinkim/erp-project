@@ -26,7 +26,6 @@ const noticeCategoryLabels: Record<NoticeCategory, string> = {
   MANAGEMENT: "경영",
   HR: "인사",
   PAYROLL: "급여",
-  DEPARTMENT: "부서",
 }
 
 const initialPostForm = {

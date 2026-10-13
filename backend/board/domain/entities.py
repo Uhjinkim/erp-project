@@ -15,7 +15,6 @@ class NoticeCategory(StrEnum):
     MANAGEMENT = "MANAGEMENT"
     HR = "HR"
     PAYROLL = "PAYROLL"
-    DEPARTMENT = "DEPARTMENT"
 
 
 @dataclass
