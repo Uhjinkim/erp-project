@@ -94,3 +94,6 @@ REST_FRAMEWORK = {
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+
+# 3개월 이하 근무자 평가 제외. Only development settings may turn it off for local testing.
+EVALUATION_MINIMUM_TENURE_ENABLED = True

@@ -20,6 +20,10 @@ class EvaluationListQuerySerializer(serializers.Serializer):
     year = serializers.RegexField(r"^\d{4}$", required=False)
 
 
+class EvaluationTargetQuerySerializer(serializers.Serializer):
+    year = serializers.RegexField(r"^\d{4}$")
+
+
 class ReasonSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=REASON_MAX_LENGTH)
 

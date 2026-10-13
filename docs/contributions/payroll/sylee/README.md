@@ -23,9 +23,9 @@
 - 구현 범위: `FN-PY-001`~`FN-PY-007` — 급여 생성(구성항목 동시 입력 가능), 구성항목
   입력·수정, 확정, 확정취소, 재확정, 사원별 급여 조회(급여담당자), 본인 급여명세 조회,
   변경 이력 조회. React 급여 화면(급여명세서 형식, 부서→사람·정산월·상태 필터, 미작성
-  사원 목록, 상단 경고창).
-- 제외 범위: 4대보험 요율·소득세 자동 계산(금액은 급여담당자가 입력), 급여명세서
-  출력·PDF, 급여 공지(`FN-BD-007`) 연동, 공휴일 데이터 시드, 주민등록번호 표시,
+  사원 목록, 상단 경고창). 지급일 지정·수정, 확정 급여명세서 PDF(브라우저 인쇄)·엑셀 저장.
+- 제외 범위: 4대보험 요율·소득세 자동 계산(금액은 급여담당자가 입력), 서버에서 생성하는
+  PDF 파일, 급여 공지(`FN-BD-007`) 연동, 공휴일 데이터 시드, 주민등록번호 표시,
   구성항목 관리 화면(필요한 항목만 migration으로 추가).
 
 ## 설계 결정
@@ -65,17 +65,39 @@
   입력 폼도 같은 순서를 쓴다.
 - 이력 표시(2026-10-07): 첫 줄에 `상태 / 수정일자 / 담당자`, 다음 줄에 사유·변경 내용을
   표시한다. 일반 사원은 `상태 / 날짜`만 보인다.
+- 급여 대상자 조회(2026-10-12): workforce의 사원 목록 API가 `HR-001`에 따라 인사관리자
+  전용이 되면서(PR #5), 인사관리자가 아닌 급여담당자는 급여 화면에서 403("이 작업을 수행할
+  권한이 없습니다.")을 받고 대상자를 고를 수 없었다. workforce 권한을 넓히지 않고, 급여
+  모듈 전용 `GET /api/payroll/employees/`(급여담당자만, 사번·이름·부서·직급·재직 여부만
+  반환, 연락처 제외)를 추가했다. workforce 조회는 `WorkforceGateway.list_payroll_targets`
+  포트를 거친다.
+- 지급일(2026-10-12): 생성 시 비워 두면 정산일자 정책으로 자동 지정하고, 값을 주면 그
+  날짜를 쓴다. 작성중 상태에서는 구성항목 편집과 함께 바꿀 수 있고, 확정 상태에서는
+  바꿀 수 없다(`PY-005`, 확정취소 후 수정). 변경은 `수정` 이력에
+  `지급일 2026-09-25 → 2026-09-24`처럼 기록한다. 지급일 범위 제한(정산월 안이어야 하는지
+  등)은 규칙이 없어 두지 않았다.
+- 급여명세서 내려받기(2026-10-12): 확정된 급여만 가능하다. 엑셀은 백엔드가 `openpyxl`로
+  화면과 같은 양식(0원 항목 제외, 같은 순서)의 `.xlsx`를 만들고, 본인 또는 급여담당자만
+  받을 수 있다. PDF는 브라우저 인쇄 대화상자의 "PDF로 저장"을 쓰며, 인쇄 시 선택한
+  명세서만 출력된다.
+- 표시 순서의 기준을 백엔드로 옮겼다(`payroll.domain.policies.PAYSLIP_ORDER`): API가
+  구성항목 목록과 급여 항목을 이 순서로 내려주고, 화면과 엑셀이 같은 순서를 쓴다.
 
 ## 인터페이스와 데이터 영향
 
 - API·권한 변경(`/api/payroll/`, 세션 인증 필수):
-  - `GET components/` — 활성 구성항목 목록
+  - `GET components/` — 활성 구성항목 목록(급여명세서 표시 순서)
+  - `GET employees/` — 급여 대상자 목록(급여담당자 전용, 2026-10-12 추가):
+    `emp_no`, `name`, `dept_no`, `dept_name`, `position_name`, `is_active`
   - `GET statements/` — 본인 급여(확정 건만). `?emp_no=<사번>` 또는 `?all=true`는
     급여담당자 전용(작성중 포함)
   - `POST statements/` — 급여 생성(급여담당자, 본인 제외). 본문 `emp_no`, `year`,
-    `month`, 선택 `items[{component_code, amount}]`
+    `month`, 선택 `items[{component_code, amount}]`, 선택 `payment_date`(생략 시 자동)
   - `GET statements/{id}/` — 상세(본인은 확정 건만, 급여담당자는 전체)
-  - `PUT statements/{id}/items/` — 구성항목 교체(급여담당자, 본인 제외, 작성중만)
+  - `GET statements/{id}/excel/` — 확정 급여명세서 `.xlsx`(본인 또는 급여담당자,
+    작성중이면 400, 2026-10-12 추가)
+  - `PUT statements/{id}/items/` — 구성항목 교체, 선택 `payment_date` 변경(급여담당자,
+    본인 제외, 작성중만)
   - `POST statements/{id}/confirm/`, `POST statements/{id}/cancel-confirmation/`
     (급여담당자, 본인 제외, 확정취소는 `reason` 필수)
   - `GET statements/{id}/history/` — 급여담당자: `action`, `changed_at`,
@@ -95,18 +117,23 @@
   2026-10-06 이전에 기록된 이력 사유는 영문 코드·소수점 형식(`BASE_PAY=2300000.00`)으로
   남아 있으며, 새 형식으로 바꾸려면 데이터 수정 승인이 필요하다.
 - 환경변수·인프라 영향: 없음.
+- 의존성(2026-10-12): 백엔드에 `openpyxl` 3.1.5 추가(`uv add`, `pyproject.toml`·`uv.lock`
+  갱신). 팀원은 병합 후 `uv sync`가 필요하다. 스키마 변경·migration은 없다.
 
 ## 검증
 
-- 실행한 테스트(2026-10-06, `origin/dev` 병합 후): `uv run pytest`(88건 통과 — 급여 51건,
-  게시판 37건), `uv run ruff check .`, `uv run python manage.py check`,
-  `uv run python manage.py makemigrations --check --dry-run`, `bun run lint`, `bun run build`,
-  `.\scripts\start-dev.ps1 -Check`, `.\scripts\docs-workflow.ps1 check`(통과)
+- 실행한 테스트(2026-10-12): `uv run pytest`(전체 279건 통과, 급여 대상자 조회 회귀 테스트·
+  지급일·엑셀 테스트 포함), `uv run ruff check .`, `uv run python manage.py check`,
+  `uv run python manage.py makemigrations --check --dry-run`, `bun run lint`, `bun run build`.
+  공유 개발 DB에서 급여 대상자 조회를 읽기 전용으로 실행해 정상 동작을 확인했다.
+- 이전 검증(2026-10-06, `origin/dev` 병합 후): 88건 통과, `start-dev.ps1 -Check`,
+  `docs-workflow.ps1 check` 통과
 - `origin/dev` 병합 시 `INSTALLED_APPS`, URL, 테스트 `MIGRATION_MODULES`, 프론트엔드 모듈
   전환에서 급여·게시판 등록이 겹쳐 충돌했고, 양쪽을 모두 유지하는 방식으로 해결했다.
 - 남은 검증:
-  - 로컬 개발 서버(`start-dev.ps1`, `--noreload`) 재시작 후 브라우저에서 상여·소득세 입력,
-    급여명세서 표시, 상태 필터, 이력 표시 수동 확인
+  - 로컬 개발 서버(`start-dev.ps1`, `--noreload`) 재시작 후 브라우저에서 인사관리자가 아닌
+    급여담당자 계정으로 급여 생성, 지급일 수정, PDF 인쇄·엑셀 저장, 상태 필터, 이력 표시
+    수동 확인
 
 ## 공용 문서 반영 후보
 
@@ -123,6 +150,11 @@
 - `05-open-policies.md`: 미해결 안건 "급여 정산일자"를 확정 반영 사항(매월 25일, 휴일이면
   직전 평일)으로 이동.
 - `06-api-specification.md`: 위 급여 API 절 추가.
+- 모듈 간 사원 조회 방식(workforce 담당자와 협의 필요): workforce의
+  `frontend/src/api/workforce.ts`에 "다른 모듈의 호출 방식은 결정 대기 중"이라는 메모가
+  있다. 급여는 HR-001을 넓히지 않도록 자기 모듈에 업무에 필요한 최소 필드만 내려주는
+  대상자 API를 두는 방식을 택했다. 다른 모듈(평가·휴가 등)도 같은 문제를 겪는다면 이 방식을
+  공용 원칙으로 정할지 문서 담당자·workforce 담당자의 결정이 필요하다.
 - `08-table-specification.md`: 급여 4개 테이블이 Django state-only 모델로 연결되었음,
   CHECK 허용값(`작성중`/`확정`, `지급`/`공제`, `확정`/`확정취소`/`재확정`/`수정`),
   신규 `payroll_public_holidays`, `payroll_items` 시드 8건 반영.

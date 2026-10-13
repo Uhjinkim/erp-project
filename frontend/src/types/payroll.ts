@@ -15,6 +15,15 @@ export type PayrollItem = {
   amount: number
 }
 
+export type PayrollTargetEmployee = {
+  emp_no: number
+  name: string
+  dept_no: number | null
+  dept_name: string | null
+  position_name: string | null
+  is_active: boolean
+}
+
 export type PayrollEmployeeSummary = {
   emp_no: number | null
   name: string | null

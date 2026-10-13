@@ -371,31 +371,95 @@ def test_former_evaluator_who_became_hr_manager_cannot_confirm(org) -> None:
 
 
 @pytest.mark.django_db
-def test_fn_ev_001_hr_manager_is_never_an_evaluator(org) -> None:
+def test_hr_manager_department_head_evaluates_and_another_hr_confirms(org) -> None:
+    """인사관리자+부서장은 평가하고, 확정은 다른 인사관리자가 한다 (2026-10-08)."""
     hr = client_for(org["hr"])
     hr_2 = create_employee(9002, "hr2@example.com")
     make_hr_manager(hr_2)
-
-    # An HR manager who heads the department cannot write the evaluation.
     department = org["member"].department
     department.head = org["hr"]
     department.save(update_fields=["head"])
-    blocked = create_evaluation(hr)
-    assert blocked.status_code == 403
-    assert blocked.data["code"] == "hr_manager_cannot_evaluate"
 
-    department.head = org["head"]
-    department.save(update_fields=["head"])
-    eval_id = create_evaluation(client_for(org["head"])).data["eval_id"]
-    for evaluator_no in (9001, 9002):
-        response = hr.post(
-            f"/api/evaluations/{eval_id}/reassign/",
-            {"evaluator_no": evaluator_no, "reason": "사유"},
-            format="json",
-        )
-        assert response.status_code == 403
-        assert response.data["code"] == "hr_manager_cannot_evaluate"
-    assert EvaluationModel.objects.get(eval_id=eval_id).evaluator_id == 2001
+    created = create_evaluation(hr)
+    assert created.status_code == 201, created.data
+    eval_id = created.data["eval_id"]
+    assert hr.post(f"/api/evaluations/{eval_id}/submit/").status_code == 200
+
+    own = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    assert own.status_code == 403
+    assert own.data["code"] == "confirmation_not_allowed"
+    for path, body in [
+        ("return", {"reason": "사유"}),
+        ("exclude", {"reason": "사유"}),
+        ("reassign", {"evaluator_no": 2002, "reason": "사유"}),
+    ]:
+        response = hr.post(f"/api/evaluations/{eval_id}/{path}/", body, format="json")
+        assert response.status_code == 403, path
+        assert response.data["code"] == "own_evaluation_action_not_allowed"
+    assert client_for(hr_2).post(f"/api/evaluations/{eval_id}/confirm/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_employee_with_three_months_or_less_is_not_evaluated(org) -> None:
+    create_employee(1009, "newbie@example.com", department=org["member"].department)
+    Employee.objects.filter(employee_no=1009).update(hire_date=timezone.localdate())
+
+    response = create_evaluation(client_for(org["head"]), emp_no=1009)
+    assert response.status_code == 400
+    assert response.data["code"] == "insufficient_tenure"
+
+
+def target_nos(client: APIClient, year: str | None = None) -> list[int]:
+    response = client.get("/api/evaluations/targets/", {"year": year or current_year()})
+    assert response.status_code == 200
+    return [item["emp_no"] for item in response.data]
+
+
+@pytest.mark.django_db
+def test_department_head_without_hr_role_gets_creation_targets(org) -> None:
+    """Regression: the picker must not depend on the HR-only employee list (HR-001)."""
+    create_employee(1009, "newbie@example.com", department=org["member"].department)
+    Employee.objects.filter(employee_no=1009).update(hire_date=timezone.localdate())
+    head = client_for(org["head"])
+    assert head.get("/api/workforce/employees/").status_code == 403
+
+    response = head.get("/api/evaluations/targets/", {"year": current_year()})
+    assert response.status_code == 200
+    assert {item["emp_no"] for item in response.data} == {1001, 2002}
+    member = next(item for item in response.data if item["emp_no"] == 1001)
+    assert member == {"emp_no": 1001, "name": "사원 1001", "dept_no": 10, "pos_code": "STAFF"}
+
+    assert target_nos(client_for(org["parent_head"])) == [2001]
+    assert target_nos(client_for(org["member"])) == []
+    assert target_nos(client_for(org["hr"])) == []
+
+    assert create_evaluation(head).status_code == 201
+    assert target_nos(head) == [2002]
+
+
+@pytest.mark.django_db
+def test_creation_targets_use_year_end_department(org) -> None:
+    last_year = int(current_year()) - 1
+    moved = create_employee(1010, "moved@example.com", department=org["other"].department)
+    EmploymentHistory.objects.create(
+        employee=moved,
+        department=org["member"].department,
+        position_id="STAFF",
+        start_date=date(2024, 1, 1),
+        end_date=date(last_year, 12, 31),
+    )
+    head = client_for(org["head"])
+    assert 1010 in target_nos(head, str(last_year))
+    assert 1010 not in target_nos(head)
+
+
+@pytest.mark.django_db
+def test_creation_targets_require_valid_year(org) -> None:
+    head = client_for(org["head"])
+    assert head.get("/api/evaluations/targets/").status_code == 400
+    response = head.get("/api/evaluations/targets/", {"year": str(int(current_year()) - 2)})
+    assert response.status_code == 400
+    assert response.data["code"] == "eval_year_not_allowed"
 
 
 @pytest.mark.django_db
@@ -428,8 +492,15 @@ def test_hr_actions_hide_own_unconfirmed_evaluation(org) -> None:
     eval_id = create_evaluation(head, emp_no=9001).data["eval_id"]
     head.post(f"/api/evaluations/{eval_id}/submit/")
 
-    response = client_for(org["hr"]).post(f"/api/evaluations/{eval_id}/confirm/")
-    assert response.status_code == 404
+    hr = client_for(org["hr"])
+    # README: the target may not confirm -> 403 confirmation_not_allowed.
+    confirm = hr.post(f"/api/evaluations/{eval_id}/confirm/")
+    assert confirm.status_code == 403
+    assert confirm.data["code"] == "confirmation_not_allowed"
+    # README EV-005: the other HR actions keep the evaluation hidden.
+    returned = hr.post(f"/api/evaluations/{eval_id}/return/", {"reason": "사유"}, format="json")
+    assert returned.status_code == 404
+    assert EvaluationModel.objects.get(eval_id=eval_id).eval_status == "제출"
 
 
 @pytest.mark.django_db
@@ -535,3 +606,12 @@ def test_evaluation_admin_is_read_only() -> None:
         assert not model_admin.has_add_permission(request)
         assert not model_admin.has_change_permission(request)
         assert not model_admin.has_delete_permission(request)
+
+
+@pytest.mark.django_db
+def test_timestamps_are_returned_with_time_zone(org) -> None:
+    created = create_evaluation(client_for(org["head"]))
+    history = client_for(org["hr"]).get(f"/api/evaluations/{created.data['eval_id']}/history/")
+    for value in (created.data["updated_at"], history.data[0]["changed_at"]):
+        rendered = str(value)
+        assert rendered.endswith("Z") or "+" in rendered, rendered

@@ -22,6 +22,7 @@ media/
 node_modules/
 dist/
 .vite/
+/frontend/mockups/
 
 # Test and coverage output
 .coverage
@@ -33,6 +34,7 @@ coverage/
 *.pid
 *.sql
 *.dump
+!scripts/sql/create_50_test_employee_accounts.sql
 
 # Editors and operating systems
 .DS_Store

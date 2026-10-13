@@ -4,17 +4,23 @@ import {
   cancelPayrollConfirmation,
   confirmPayrollStatement,
   createPayrollStatement,
+  downloadPayslipExcel,
   loadAllPayrollStatements,
   loadMyPayrollStatements,
   loadPayrollComponents,
   loadPayrollHistory,
   loadPayrollStatementsForEmployee,
+  loadPayrollTargets,
   updatePayrollItems,
 } from "../api/payroll"
-import { loadWorkforce } from "../api/workforce"
 import type { CurrentUser } from "../types/auth"
-import type { PayrollComponent, PayrollHistoryEntry, PayrollItem, PayrollStatement } from "../types/payroll"
-import type { DepartmentSummary, EmployeeSummary } from "../types/workforce"
+import type {
+  PayrollComponent,
+  PayrollHistoryEntry,
+  PayrollItem,
+  PayrollStatement,
+  PayrollTargetEmployee,
+} from "../types/payroll"
 
 type PayrollPanelProps = {
   enabled: boolean
@@ -25,32 +31,14 @@ type AmountValues = Record<string, string>
 type Notice = { text: string; tone: "info" | "error" }
 type StatusFilter = "all" | "작성중" | "확정" | "미작성"
 
+type Department = { dept_no: number; dept_name: string }
+
 const NO_DEPARTMENT = "__none__"
-// Display order for payslips and input forms (급여 담당자 지정: 기본급·고정수당·초과근무수당·상여).
-const DISPLAY_ORDER = [
-  "BASE_PAY",
-  "FIXED_ALLOWANCE",
-  "OVERTIME_ALLOWANCE",
-  "BONUS",
-  "NATIONAL_PENSION",
-  "HEALTH_INSURANCE",
-  "EMPLOYMENT_INSURANCE",
-  "INCOME_TAX",
-]
 
 const today = new Date()
 const currentYear = today.getFullYear()
 const currentMonth = today.getMonth() + 1
 const currentPeriod = `${currentYear}-${String(currentMonth).padStart(2, "0")}`
-
-function displayRank(code: string): number {
-  const index = DISPLAY_ORDER.indexOf(code)
-  return index === -1 ? DISPLAY_ORDER.length : index
-}
-
-function sortComponents(components: PayrollComponent[]): PayrollComponent[] {
-  return [...components].sort((left, right) => displayRank(left.code) - displayRank(right.code))
-}
 
 function periodKey(statement: PayrollStatement): string {
   return `${statement.year}-${String(statement.month).padStart(2, "0")}`
@@ -79,10 +67,10 @@ type ComponentAmountFieldsProps = {
 }
 
 function ComponentAmountFields({ components, values, onChange }: ComponentAmountFieldsProps) {
-  const sorted = sortComponents(components)
+  // Components arrive from the API already in payslip order.
   const groups: [string, PayrollComponent[]][] = [
-    ["지급 항목", sorted.filter((item) => item.category === "지급")],
-    ["공제 항목", sorted.filter((item) => item.category === "공제")],
+    ["지급 항목", components.filter((item) => item.category === "지급")],
+    ["공제 항목", components.filter((item) => item.category === "공제")],
   ]
   return (
     <div className="payroll-component-fields">
@@ -114,11 +102,10 @@ type PayslipTableProps = {
 }
 
 function PayslipTable({ statement, components }: PayslipTableProps) {
-  // Only items with a nonzero amount are listed; empty or zero components are omitted entirely.
+  // Only nonzero items are listed; the API returns items already in payslip order.
   const nameByCode = new Map(components.map((component) => [component.code, component.name]))
   const lines = statement.items
     .filter((item) => Math.trunc(item.amount) !== 0)
-    .sort((left, right) => displayRank(left.component_code) - displayRank(right.component_code))
     .map((item) => ({
       name: nameByCode.get(item.component_code) ?? item.component_code,
       category: item.category,
@@ -174,8 +161,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   const createFormRef = useRef<HTMLFormElement>(null)
   const [tab, setTab] = useState<"mine" | "manage">("mine")
   const [components, setComponents] = useState<PayrollComponent[]>([])
-  const [employees, setEmployees] = useState<EmployeeSummary[]>([])
-  const [departments, setDepartments] = useState<DepartmentSummary[]>([])
+  const [employees, setEmployees] = useState<PayrollTargetEmployee[]>([])
   const [mine, setMine] = useState<PayrollStatement[]>([])
   const [managed, setManaged] = useState<PayrollStatement[]>([])
   const [filterDeptNo, setFilterDeptNo] = useState("")
@@ -187,7 +173,11 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
   const [createYear, setCreateYear] = useState(String(currentYear))
   const [createMonth, setCreateMonth] = useState(String(currentMonth))
   const [createItemValues, setCreateItemValues] = useState<AmountValues>({})
+  // Empty means "let the backend apply the settlement-date policy".
+  const [createPaymentDate, setCreatePaymentDate] = useState("")
   const [itemDrafts, setItemDrafts] = useState<Record<number, AmountValues>>({})
+  const [paymentDateDrafts, setPaymentDateDrafts] = useState<Record<number, string>>({})
+  const [printingId, setPrintingId] = useState<number | null>(null)
   const [histories, setHistories] = useState<Record<number, PayrollHistoryEntry[]>>({})
   const [openHistory, setOpenHistory] = useState<number | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
@@ -207,9 +197,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
       setComponents(componentList)
       setMine(mineList)
       if (isPayrollManager) {
-        const workforce = await loadWorkforce()
-        setEmployees(workforce.employees)
-        setDepartments(workforce.departments)
+        setEmployees(await loadPayrollTargets())
         const managedList = filterEmpNo
           ? await loadPayrollStatementsForEmployee(Number(filterEmpNo))
           : await loadAllPayrollStatements()
@@ -228,6 +216,38 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
     const timer = window.setTimeout(() => void refresh(), 0)
     return () => window.clearTimeout(timer)
   }, [enabled, refresh])
+
+  // Print only the chosen payslip; the browser print dialog also offers "PDF로 저장".
+  useEffect(() => {
+    if (printingId === null) return
+    const finish = () => setPrintingId(null)
+    document.body.classList.add("payroll-printing")
+    window.addEventListener("afterprint", finish, { once: true })
+    const timer = window.setTimeout(() => window.print(), 0)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener("afterprint", finish)
+      document.body.classList.remove("payroll-printing")
+    }
+  }, [printingId])
+
+  async function saveExcel(statement: PayrollStatement) {
+    try {
+      await downloadPayslipExcel(statement)
+    } catch (error) {
+      showError(error, "급여명세서를 내려받지 못했습니다.")
+    }
+  }
+
+  const departments = useMemo(() => {
+    const byNo = new Map<number, Department>()
+    for (const employee of employees) {
+      if (employee.dept_no !== null && !byNo.has(employee.dept_no)) {
+        byNo.set(employee.dept_no, { dept_no: employee.dept_no, dept_name: employee.dept_name ?? `${employee.dept_no}` })
+      }
+    }
+    return [...byNo.values()].sort((left, right) => left.dept_name.localeCompare(right.dept_name, "ko"))
+  }, [employees])
 
   const employeesInDepartment = useCallback(
     (deptNo: string) =>
@@ -255,8 +275,10 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
         Number(createYear),
         Number(createMonth),
         itemsFromAmountValues(createItemValues),
+        createPaymentDate || null,
       )
       setCreateItemValues({})
+      setCreatePaymentDate("")
       setCreateEmpNo("")
       await refresh()
       showInfo("급여를 생성했습니다.")
@@ -267,7 +289,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
     }
   }
 
-  function prefillCreate(employee: EmployeeSummary) {
+  function prefillCreate(employee: PayrollTargetEmployee) {
     const [year, month] = filterPeriod.split("-")
     setCreateDeptNo(employee.dept_no === null ? NO_DEPARTMENT : String(employee.dept_no))
     setCreateEmpNo(String(employee.emp_no))
@@ -278,10 +300,16 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
 
   function beginEditItems(statement: PayrollStatement) {
     setItemDrafts((previous) => ({ ...previous, [statement.statement_id]: amountValuesFromItems(statement.items) }))
+    setPaymentDateDrafts((previous) => ({ ...previous, [statement.statement_id]: statement.payment_date }))
   }
 
   function closeEditor(statementId: number) {
     setItemDrafts((previous) => {
+      const next = { ...previous }
+      delete next[statementId]
+      return next
+    })
+    setPaymentDateDrafts((previous) => {
       const next = { ...previous }
       delete next[statementId]
       return next
@@ -303,12 +331,12 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
     }
     setLoading(true)
     try {
-      await updatePayrollItems(statementId, items)
+      await updatePayrollItems(statementId, items, paymentDateDrafts[statementId] || null)
       closeEditor(statementId)
       setHistories((previous) => ({ ...previous, [statementId]: [] }))
       setOpenHistory(null)
       await refresh()
-      showInfo("급여 구성항목을 저장했습니다.")
+      showInfo("급여 내용을 저장했습니다.")
     } catch (error) {
       showError(error, "구성항목을 저장하지 못했습니다.")
     } finally {
@@ -381,7 +409,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
       ? employees.filter((employee) => String(employee.emp_no) === filterEmpNo)
       : filterCandidates
     const written = new Set(scopedStatements.map((statement) => statement.employee_no))
-    return scope.filter((employee) => employee.tenure_status === "재직" && !written.has(employee.emp_no))
+    return scope.filter((employee) => employee.is_active && !written.has(employee.emp_no))
   }, [employees, filterCandidates, filterEmpNo, filterPeriod, scopedStatements])
 
   const draftCount = scopedStatements.filter((statement) => statement.status === "작성중").length
@@ -391,8 +419,6 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
       ? scopedStatements
       : scopedStatements.filter((statement) => statement.status === filterStatus)
   const visible = tab === "mine" ? mine : managedVisible
-  const departmentName = (deptNo: number | null) =>
-    departments.find((department) => department.dept_no === deptNo)?.dept_name ?? "부서 미지정"
 
   return (
     <section className="payroll-panel">
@@ -475,6 +501,18 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
                 />
               </label>
             </div>
+            <label>
+              지급일 (선택)
+              <input
+                type="date"
+                value={createPaymentDate}
+                onChange={(event) => setCreatePaymentDate(event.target.value)}
+                aria-describedby="payroll-payment-date-help"
+              />
+            </label>
+            <p className="helper" id="payroll-payment-date-help">
+              비워 두면 매월 25일(주말·공휴일이면 직전 평일)로 자동 지정되며, 생성 후에도 작성중 상태에서 수정할 수 있습니다.
+            </p>
             <ComponentAmountFields components={components} values={createItemValues} onChange={updateCreateItem} />
             <button className="primary" disabled={loading} type="submit">
               급여 생성
@@ -567,7 +605,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
                     <div>
                       <strong>{employee.name}</strong>
                       <span>
-                        {departmentName(employee.dept_no)} · #{employee.emp_no}
+                        {employee.dept_name ?? "부서 미지정"} · #{employee.emp_no}
                       </span>
                     </div>
                     <button
@@ -588,7 +626,10 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
         <div className="request-list">
           {visible.length === 0 && <div className="empty">표시할 급여가 없습니다.</div>}
           {visible.map((item) => (
-            <article className="payslip" key={item.statement_id}>
+            <article
+              className={printingId === item.statement_id ? "payslip payslip--printing" : "payslip"}
+              key={item.statement_id}
+            >
               <header className="payslip-header">
                 <h3>
                   {item.year}년 {item.month}월 급여명세서
@@ -618,7 +659,7 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
               {tab === "manage" && item.status === "작성중" && !itemDrafts[item.statement_id] && (
                 <div className="actions">
                   <button onClick={() => beginEditItems(item)} type="button">
-                    구성항목 편집
+                    지급일·구성항목 편집
                   </button>
                   <button className="accent" onClick={() => void confirm(item.statement_id)} type="button">
                     확정
@@ -626,16 +667,35 @@ export function PayrollPanel({ enabled, currentUser }: PayrollPanelProps) {
                 </div>
               )}
 
-              {tab === "manage" && item.status === "확정" && (
+              {item.status === "확정" && (
                 <div className="actions">
-                  <button onClick={() => void cancelConfirmation(item.statement_id)} type="button">
-                    확정취소
+                  <button type="button" onClick={() => setPrintingId(item.statement_id)}>
+                    PDF 저장·인쇄
                   </button>
+                  <button type="button" onClick={() => void saveExcel(item)}>
+                    엑셀 저장
+                  </button>
+                  {tab === "manage" && (
+                    <button onClick={() => void cancelConfirmation(item.statement_id)} type="button">
+                      확정취소
+                    </button>
+                  )}
                 </div>
               )}
 
               {itemDrafts[item.statement_id] && (
                 <div className="payroll-items-editor">
+                  <label className="payroll-payment-date">
+                    지급일
+                    <input
+                      type="date"
+                      required
+                      value={paymentDateDrafts[item.statement_id] ?? item.payment_date}
+                      onChange={(event) =>
+                        setPaymentDateDrafts((previous) => ({ ...previous, [item.statement_id]: event.target.value }))
+                      }
+                    />
+                  </label>
                   <ComponentAmountFields
                     components={components}
                     values={itemDrafts[item.statement_id]}

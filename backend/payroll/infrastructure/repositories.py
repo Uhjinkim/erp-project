@@ -68,6 +68,7 @@ class DjangoPayrollStatementRepository(PayrollStatementRepository):
 
     def save(self, statement: PayrollStatement) -> None:
         updated = PayrollStatementModel.objects.filter(statement_id=statement.statement_id).update(
+            payment_date=statement.payment_date,
             status=statement.status.value,
             total_earnings=statement.total_earnings,
             total_deductions=statement.total_deductions,

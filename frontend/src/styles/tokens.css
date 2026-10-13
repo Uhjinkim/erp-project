@@ -1,0 +1,28 @@
+:root {
+  --color-surface: #fff;
+  --color-canvas: #f4f4f4;
+  --color-text: #161616;
+  --color-muted: #525252;
+  --color-border: #c6c6c6;
+  --color-action: #0f62fe;
+  --color-action-hover: #0043ce;
+  --color-danger: #da1e28;
+  --color-success: #198038;
+  --color-focus: #0f62fe;
+  --color-inverse: #161616;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --font-body: 1rem;
+  --font-small: .875rem;
+  --font-title: 1.75rem;
+  --layer-header: 10;
+  --layer-overlay: 30;
+  font-family: "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  font-synthesis: none;
+  color: var(--color-text);
+  background: var(--color-canvas);
+}

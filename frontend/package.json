@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "bun test ./tests"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.1.0",
