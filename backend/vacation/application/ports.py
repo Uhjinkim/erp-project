@@ -17,3 +17,14 @@ class LeaveBalanceGateway(ABC):
     @abstractmethod
     def remaining_days(self, employee_no: int, type_id: str) -> Decimal | None:
         """Return None when this leave type does not require a balance check."""
+
+    @abstractmethod
+    def deduct(self, employee_no: int, type_id: str, days: Decimal) -> bool:
+        """Atomically check and deduct days within the caller's unit of work.
+
+        Return whether a balance was charged; raise InsufficientLeaveDaysError on shortage.
+        """
+
+    @abstractmethod
+    def restore(self, employee_no: int, type_id: str, days: Decimal) -> None:
+        """Restore a previously charged balance within the caller's unit of work."""

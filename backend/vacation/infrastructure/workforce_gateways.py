@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from vacation.application.ports import LeaveBalanceGateway, WorkforceGateway
+from vacation.domain.exceptions import InsufficientLeaveDaysError
 from vacation.infrastructure.models import LeaveBalanceModel, LeaveTypeModel
 from workforce.application.services import (
     HR_MANAGER_ROLE,
@@ -45,3 +46,27 @@ class DjangoLeaveBalanceGateway(LeaveBalanceGateway):
         ).first()
         # Missing balance data must fail closed for deducting leave types.
         return balance.remaining_days if balance is not None else Decimal("0")
+
+    def deduct(self, employee_no: int, type_id: str, days: Decimal) -> bool:
+        if LeaveTypeModel.objects.get(type_id=type_id).deduct_days == 0:
+            return False
+        balance = LeaveBalanceModel.objects.select_for_update().filter(
+            employee_id=employee_no, vacation_type_id=type_id
+        ).first()
+        remaining = balance.remaining_days if balance is not None else Decimal("0")
+        if balance is None or days > remaining:
+            raise InsufficientLeaveDaysError(
+                f"신청일수({days})가 잔여일수({remaining})를 초과합니다."
+            )
+        balance.remaining_days -= days
+        balance.save(update_fields=["remaining_days", "updated_at"])
+        return True
+
+    def restore(self, employee_no: int, type_id: str, days: Decimal) -> None:
+        # A missing charged balance is an infrastructure failure, not permission to
+        # silently lose the refund. Let the unit of work roll back the recall.
+        balance = LeaveBalanceModel.objects.select_for_update().get(
+            employee_id=employee_no, vacation_type_id=type_id
+        )
+        balance.remaining_days += days
+        balance.save(update_fields=["remaining_days", "updated_at"])

@@ -2,7 +2,7 @@
 
 - Notion 원문: <https://app.notion.com/p/3d78eced448d8124b3b4d00cd2c0b5f3>
 - 원문 최종 수정: 2026-10-12
-- 저장소 확인: 2026-10-12
+- 저장소 코드 확인: 2026-10-13 (휴가 수정; Notion 재조회 없음)
 - 대상: 공유 개발 PostgreSQL `erp_dev.public`의 ERD 29개 테이블
 - 기준 자료: [ERP 개발 DB 스키마](../../../erp_dev.md), `backend/accounts`, `backend/workforce`, `backend/vacation` 모델과 마이그레이션
 - 용도: ERD의 테이블·컬럼·관계를 구현 관점에서 찾아보기 위한 문서
@@ -302,7 +302,8 @@ ERD에는 대부분의 컬럼에 대한 NULL 허용 여부, 기본값, CHECK 제
 | `approver_no` | `integer` | FK → `employees.emp_no` | 승인 담당 사번 |
 | `approved_at` | `timestamp` |  | 승인 시각 |
 | `reject_reason` | `varchar(255)` |  | 반려 사유 |
-| `request_reason` | `text` |  | 신청 사유 |
+| `request_reason` | `text` |  | 신청 사유 (API 입력 최대 255자) |
+| `balance_deducted` | `boolean` |  | 이번 승인에서 잔여일수가 실제 차감되었는지; 기본 false |
 
 애플리케이션의 상태값은 `대기`, `승인`, `반려`, `취소`, `회수`다.
 `use_days > 0`, `end_datetime >= start_datetime`는 Django 모델에 정의된 조건이다.
@@ -319,6 +320,17 @@ ERD에는 대부분의 컬럼에 대한 NULL 허용 여부, 기본값, CHECK 제
 | `actor_emp_no` | `integer` | FK → `employees.emp_no` | 변경 수행 사번 |
 | `reason` | `varchar(255)` |  | 변경 사유 |
 | `changed_at` | `timestamp` |  | 변경 시각 |
+
+`leave_request_history`에는 migration 0003에서 nullable JSON 필드 `before_values`,
+`after_values`를 추가한다(PostgreSQL JSONB). 유형·기간·사용일수·승인자·사유·승인 시각·
+차감 여부를 보존한다. 기존 이력에는 null을 유지하고 소실된 값을 추정하지 않는다.
+
+같은 migration의 `leave_requests.balance_deducted`는 기존 행에 false를 설정한다.
+기존 승인 건을 회수할 때 자동 환급하지 않으며 기존 잔여 산정 방식은 배포 전에 조사해야 한다.
+이 migration은 실제 DDL이며 2026-10-13 사용자 대상 확인 후 공유 개발 DB `erp_dev.public`에
+적용했다. 기존 행 보존과 신규 열의 타입·기본값을 확인했으며 운영 환경에는 적용하지 않았다.
+위 사원 참조는 ERD의 관계이고,
+신청자·승인자·이력 처리자는 Django에서 IntegerField로 매핑되어 있다.
 
 ## 게시판
 
