@@ -251,3 +251,191 @@ class ChangeRequestSerializer(serializers.Serializer):
 
     def get_can_process(self, request: object) -> bool:
         return request.request_id in self.context.get("processable_ids", set())
+
+
+class NewHireAccountSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, min_length=8, trim_whitespace=False)
+
+
+class NewHireRegistrationSerializer(serializers.Serializer):
+    """FN-HR-006 요청 형식. 사번은 서버가 발급하므로 받지 않는다(HR-007)."""
+
+    name = serializers.CharField(max_length=50)
+    birth_date = serializers.DateField()
+    gender = serializers.ChoiceField(choices=["M", "F"])
+    email = serializers.EmailField(max_length=100)
+    hire_date = serializers.DateField()
+    dept_no = serializers.IntegerField()
+    position_code = serializers.CharField(max_length=20)
+    phone = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
+    extension_no = serializers.CharField(
+        max_length=20, required=False, allow_null=True, allow_blank=True
+    )
+    address = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0)
+    role_codes = serializers.ListField(
+        child=serializers.CharField(max_length=30), required=False, default=list
+    )
+    account = NewHireAccountSerializer(required=False, allow_null=True)
+
+    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        if "emp_no" in self.initial_data:
+            raise serializers.ValidationError({"emp_no": "사번은 서버에서 자동 발급합니다."})
+        return attrs
+
+    def validate_email(self, value: str) -> str:
+        return value.strip().lower()
+
+    def validate_phone(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+    def validate_extension_no(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+    def validate_address(self, value: str | None) -> str | None:
+        return value.strip() or None if value else None
+
+
+class RegisteredNewHireSerializer(serializers.Serializer):
+    """FN-HR-006 응답. 초기 비밀번호는 응답에 포함하지 않는다."""
+
+    emp_no = serializers.IntegerField(source="result.employee_no")
+    person_id = serializers.IntegerField(source="result.person_id")
+    history_id = serializers.IntegerField(source="result.history_id")
+    name = serializers.CharField(source="result.name")
+    email = serializers.EmailField(source="command.email")
+    dept_no = serializers.IntegerField(source="command.dept_no")
+    position_code = serializers.CharField(source="command.position_code")
+    hire_date = serializers.DateField(source="command.hire_date")
+    tenure_status = serializers.SerializerMethodField()
+    account = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+
+    def get_tenure_status(self, data: object) -> str:
+        return Employee.TenureStatus.ACTIVE.value
+
+    def get_account(self, data: object) -> dict[str, object] | None:
+        account_id = data["result"].account_id
+        if account_id is None:
+            return None
+        return {"id": account_id, "email": data["command"].email}
+
+    def get_roles(self, data: object) -> list[dict[str, object]]:
+        return [
+            {"employee_role_id": item.employee_role_id, "role_code": item.role_code}
+            for item in data["result"].role_assignments
+        ]
+
+
+class RehireSerializer(NewHireRegistrationSerializer):
+    """FN-HR-009 요청 형식. 인적사항은 보낼 때만 기존 Person을 갱신한다."""
+
+    name = serializers.CharField(max_length=50, required=False)
+    birth_date = serializers.DateField(required=False)
+    gender = serializers.ChoiceField(choices=["M", "F"], required=False)
+
+
+class TerminationSerializer(serializers.Serializer):
+    """FN-HR-007 요청 형식."""
+
+    term_date = serializers.DateField()
+
+
+class RetiredEmployeeQuerySerializer(serializers.Serializer):
+    """FN-HR-008 조회 조건(쿼리 파라미터)."""
+
+    name = serializers.CharField(required=False, allow_blank=True)
+    dept_no = serializers.IntegerField(required=False)
+    emp_no = serializers.IntegerField(required=False, source="employee_no")
+    term_date_from = serializers.DateField(required=False)
+    term_date_to = serializers.DateField(required=False)
+
+    def validate_name(self, value: str) -> str | None:
+        return value.strip() or None
+
+
+class RetiredEmployeeSerializer(serializers.Serializer):
+    """FN-HR-008 응답. 급여계좌 등 상세 개인정보는 사원 상세 API에서 조회한다."""
+
+    emp_no = serializers.IntegerField(source="employee_no")
+    person_id = serializers.IntegerField()
+    name = serializers.CharField()
+    dept_no = serializers.IntegerField(allow_null=True)
+    dept_name = serializers.CharField(allow_null=True)
+    position_code = serializers.CharField(allow_null=True)
+    position_name = serializers.CharField(allow_null=True)
+    email = serializers.CharField(allow_null=True)
+    hire_date = serializers.DateField()
+    term_date = serializers.DateField()
+
+
+class TransferSerializer(serializers.Serializer):
+    """FN-HR-010 발령 요청 형식."""
+
+    start_date = serializers.DateField()
+    dept_no = serializers.IntegerField()
+    position_code = serializers.CharField(max_length=20)
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0)
+    previous_base_salary = serializers.DecimalField(
+        max_digits=15, decimal_places=2, min_value=0, required=False, allow_null=True
+    )
+    reason = serializers.CharField(
+        max_length=500, required=False, allow_null=True, allow_blank=True
+    )
+
+
+class HistoryCorrectionSerializer(serializers.Serializer):
+    """FN-HR-010 최근 이력 정정 요청. 정정 후 값 전체와 사유를 받는다."""
+
+    start_date = serializers.DateField()
+    dept_no = serializers.IntegerField()
+    position_code = serializers.CharField(max_length=20)
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0)
+    reason = serializers.CharField(max_length=500)
+
+
+class HistoryCancellationSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500)
+
+
+class HistoryEntrySerializer(serializers.Serializer):
+    """FN-HR-010 인사이력 응답."""
+
+    history_id = serializers.IntegerField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField(allow_null=True)
+    dept_no = serializers.IntegerField()
+    dept_name = serializers.CharField(allow_null=True)
+    position_code = serializers.CharField()
+    position_name = serializers.CharField(allow_null=True)
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+
+class TransferResultSerializer(serializers.Serializer):
+    history = HistoryEntrySerializer(many=True)
+    released_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
+    restored_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
+
+
+class HistoryValuesSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    end_date = serializers.DateField(allow_null=True)
+    dept_no = serializers.IntegerField()
+    position_code = serializers.CharField()
+    base_salary = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+
+class HistoryChangeSerializer(serializers.Serializer):
+    """FN-HR-010 발령·정정·취소 기록 응답."""
+
+    history_id = serializers.IntegerField()
+    action = serializers.CharField()
+    before = HistoryValuesSerializer(allow_null=True)
+    after = HistoryValuesSerializer(allow_null=True)
+    reason = serializers.CharField(allow_null=True)
+    changed_by = serializers.IntegerField(allow_null=True)
+    changed_at = serializers.DateTimeField()
+    released_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
+    restored_head_dept_nos = serializers.ListField(child=serializers.IntegerField())
