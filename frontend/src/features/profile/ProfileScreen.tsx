@@ -1,32 +1,52 @@
-import { useCallback, useEffect, useState } from "react"
-import { getMyEmployeeInfo } from "../../api/profile"
-import { EmployeeInfoCard } from "../../components/EmployeeInfoCard"
-import { PersonalInfoEditor } from "../../components/PersonalInfoRequests"
-import { EmptyState, ErrorState, Spinner } from "../../components/ui"
+import { useCallback } from "react"
+import { getMyEmployeeInfo, listChangeRequests } from "../../api/profile"
+import type { Route } from "../../app/routing"
+import { EmptyState } from "../../components/ui"
 import type { CurrentUser } from "../../types/auth"
-import type { EmployeeDetail } from "../../types/workforce"
+import { QueryFallback } from "./components/QueryFallback"
+import { useProfileQuery } from "./hooks"
+import { ChangeHistoryScreen } from "./screens/ChangeHistoryScreen"
+import { ChangeQueueScreen } from "./screens/ChangeQueueScreen"
+import { ChangeRequestScreen } from "./screens/ChangeRequestScreen"
+import { ChangeReviewScreen } from "./screens/ChangeReviewScreen"
+import { ContactEditScreen } from "./screens/ContactEditScreen"
+import { MyProfileScreen } from "./screens/MyProfileScreen"
 
-export function ProfileScreen({ user, enabled }: { user: CurrentUser; enabled: boolean }) {
-  const [employee, setEmployee] = useState<EmployeeDetail | null>(null)
-  const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [version, setVersion] = useState(0)
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    setError("")
-    try { setEmployee(await getMyEmployeeInfo()) }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "본인 정보를 불러오지 못했습니다.") }
-    finally { setLoading(false) }
-  }, [])
-  useEffect(() => {
-    if (!enabled || !user.employee) return
-    const timer = window.setTimeout(() => void refresh(), 0)
-    return () => window.clearTimeout(timer)
-  }, [enabled, user.employee, refresh])
+const selfScreens = ["my-profile", "contact-edit", "change-request", "change-history"]
+
+type ProfileScreenProps = { route: Route; user: CurrentUser; enabled: boolean }
+
+export function ProfileScreen({ route, user, enabled }: ProfileScreenProps) {
+  const search = new URLSearchParams(route.search ?? "")
+  // 조회 조건이 바뀌면 화면을 다시 마운트해 필터·입력 상태를 URL과 맞춘다.
+  const key = `${route.screenId}?${route.search ?? ""}`
+  if (!enabled) return <EmptyState title="백엔드 연결 후 개인정보를 불러옵니다" />
+  // 처리함은 인사관리자뿐 아니라 HR 요청의 처리자로 지정된 부서장·superuser도 사용한다. 대상은 서버가 거른다.
+  if (route.screenId === "change-queue") return <ChangeQueueScreen key={key} enabled={enabled} search={search} />
+  if (route.screenId === "change-review") return <ChangeReviewScreen key={key} enabled={enabled} search={search} />
+  if (!selfScreens.includes(route.screenId)) return <EmptyState title="등록되지 않은 내 정보 화면입니다" />
   if (!user.employee) return <EmptyState title="연결된 사원 정보가 없습니다">관리자에게 계정과 사원 연결을 문의하세요.</EmptyState>
-  if (!enabled) return <EmptyState title="연결 후 본인 정보를 불러옵니다" />
-  if (loading) return <Spinner />
-  if (error) return <ErrorState onRetry={() => void refresh()}>{error}</ErrorState>
-  if (!employee) return <Spinner />
-  return <div className="legacy-module"><EmployeeInfoCard title="내 인사정보" loading={false} employee={employee} /><PersonalInfoEditor employee={employee} reloadKey={version} onContactUpdated={setEmployee} onRequestsChanged={() => setVersion((value) => value + 1)} /></div>
+  return <SelfService routeKey={key} screenId={route.screenId} search={search} enabled={enabled} />
+}
+
+// 대기 요청이 없을 때(null)와 아직 조회 전을 구분하기 위해 객체로 감싼다.
+const loadPending = async () => ({ request: (await listChangeRequests({ mine: true, status: "대기" }))[0] ?? null })
+
+// 본인 정보와 대기 요청은 화면 이동 사이에 유지하고, 수정·요청·취소 후 다시 조회한다.
+function SelfService({ routeKey, screenId, search, enabled }: { routeKey: string; screenId: string; search: URLSearchParams; enabled: boolean }) {
+  const loadEmployee = useCallback(() => getMyEmployeeInfo(), [])
+  const employee = useProfileQuery(enabled, loadEmployee)
+  const pending = useProfileQuery(enabled, loadPending)
+  if (screenId === "change-history") {
+    return <ChangeHistoryScreen key={routeKey} enabled={enabled} search={search} onChanged={() => void pending.reload()} />
+  }
+  if (!employee.data) return <QueryFallback query={employee} label="본인 정보를 불러오는 중" notFoundTitle="연결된 사원 정보가 없습니다" />
+  // 대기 요청 조회가 실패해도 본인 정보는 표시한다. 요청 제한은 서버가 다시 확인한다.
+  const pendingRequest = pending.data?.request ?? null
+  if (screenId === "contact-edit") return <ContactEditScreen key={routeKey} employee={employee.data} onSaved={employee.replace} />
+  if (screenId === "change-request") {
+    if (pending.data === null && !pending.error) return <QueryFallback query={pending} label="요청 상태를 확인하는 중" />
+    return <ChangeRequestScreen key={routeKey} employee={employee.data} pending={pendingRequest} onSubmitted={() => void pending.reload()} />
+  }
+  return <MyProfileScreen key={routeKey} employee={employee.data} pending={pendingRequest} search={search} />
 }

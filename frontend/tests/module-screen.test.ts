@@ -7,6 +7,8 @@ const { BoardScreen } = await import("../src/features/board")
 const { EvaluationModule } = await import("../src/features/evaluation")
 const { PayrollScreen } = await import("../src/features/payroll")
 const { VacationPanel } = await import("../src/features/vacation")
+const { WorkforceScreen } = await import("../src/features/workforce")
+const { ProfileScreen } = await import("../src/features/profile")
 const { EmptyState } = await import("../src/components/ui")
 const user = { id: 1, email: "synthetic@example.test", employee: null, roles: [], is_staff: false, is_superuser: false }
 const connection: Parameters<typeof ModuleScreen>[0]["connection"] = {
@@ -15,7 +17,7 @@ const connection: Parameters<typeof ModuleScreen>[0]["connection"] = {
 }
 
 test("merged module dispatcher reaches every registered implementation screen", () => {
-  const entries = { board: BoardScreen, evaluation: EvaluationModule, payroll: PayrollScreen, vacation: VacationPanel }
+  const entries = { board: BoardScreen, evaluation: EvaluationModule, payroll: PayrollScreen, vacation: VacationPanel, workforce: WorkforceScreen, profile: ProfileScreen }
   for (const [moduleId, entry] of Object.entries(entries)) {
     const registration = modules.find((module) => module.id === moduleId)!
     for (const screen of registration.screens) {
@@ -31,9 +33,9 @@ test("merged module dispatcher reaches every registered implementation screen", 
 })
 
 test("session-only modules keep their session gate and unfinished screens stay placeholders", () => {
-  for (const moduleId of ["board", "evaluation", "payroll"]) {
+  for (const moduleId of ["board", "evaluation", "payroll", "workforce", "profile"]) {
     const screenId = modules.find((module) => module.id === moduleId)!.entry
     expect(ModuleScreen({ route: { moduleId, screenId }, user: null, connection }).type).toBe(EmptyState)
   }
-  expect(ModuleScreen({ route: { moduleId: "workforce", screenId: "employee-detail" }, user, connection }).type).toBe(EmptyState)
+  expect(ModuleScreen({ route: { moduleId: "system", screenId: "account-admin" }, user, connection }).type).toBe(EmptyState)
 })

@@ -47,3 +47,7 @@ export async function processChangeRequest(
     body: JSON.stringify(reason ? { reason } : {}),
   })
 }
+
+export async function getChangeRequest(requestId: number) {
+  return requestJson<PersonalInfoChangeRequest>(`${changeRequestsPath}${requestId}/`)
+}
