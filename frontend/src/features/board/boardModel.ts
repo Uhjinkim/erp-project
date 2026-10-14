@@ -7,13 +7,24 @@ export const noticeCategoryLabels: Record<NoticeCategory, string> = {
   PAYROLL: "급여",
 }
 
+export type BoardKind = "notice" | "general"
 export type SearchField = "title" | "writer"
+export type CategoryFilter = NoticeCategory | "all"
 
-export const listHref = routeHref({ moduleId: "board", screenId: "board-list" })
+const listScreenIds: Record<BoardKind, string> = { notice: "notice-list", general: "board-list" }
+
 export const writeHref = routeHref({ moduleId: "board", screenId: "board-write" })
 
-export function postHref(postId: number) {
-  return routeHref({ moduleId: "board", screenId: "board-list", search: `postId=${postId}` })
+export function listHref(kind: BoardKind) {
+  return routeHref({ moduleId: "board", screenId: listScreenIds[kind] })
+}
+
+export function postHref(kind: BoardKind, postId: number) {
+  return routeHref({ moduleId: "board", screenId: listScreenIds[kind], search: `postId=${postId}` })
+}
+
+export function kindOf(post: Pick<Post, "post_type">): BoardKind {
+  return post.post_type === "공지" ? "notice" : "general"
 }
 
 export function navigateTo(href: string) {
@@ -30,11 +41,27 @@ export function writerLabel(item: { writer_name: string | null; writer_employee_
   return item.writer_name ?? String(item.writer_employee_no)
 }
 
-export function filterPosts(posts: Post[], field: SearchField, query: string): Post[] {
+function matches(text: string, query: string) {
   const keyword = query.trim().toLowerCase()
-  if (!keyword) return posts
+  return !keyword || text.toLowerCase().includes(keyword)
+}
+
+// Per-board sequence: oldest post in the board is 1. Filtering never renumbers.
+export function boardNumbers(posts: Post[], kind: BoardKind): Map<number, number> {
+  const ids = posts.filter((post) => kindOf(post) === kind).map((post) => post.post_id).sort((a, b) => a - b)
+  return new Map(ids.map((postId, index) => [postId, index + 1]))
+}
+
+export function filterGeneralPosts(posts: Post[], field: SearchField, query: string): Post[] {
   return posts.filter((post) =>
-    (field === "title" ? post.title : writerLabel(post)).toLowerCase().includes(keyword))
+    kindOf(post) === "general" && matches(field === "title" ? post.title : writerLabel(post), query))
+}
+
+export function filterNoticePosts(posts: Post[], category: CategoryFilter, query: string): Post[] {
+  return posts.filter((post) =>
+    kindOf(post) === "notice"
+    && (category === "all" || post.notice_category === category)
+    && matches(post.title, query))
 }
 
 export function formatDateTime(value: string) {

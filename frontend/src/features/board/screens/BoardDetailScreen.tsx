@@ -7,11 +7,12 @@ import { Alert, Badge, Button, Card, ConfirmDialog, DetailList, EmptyState, Erro
 import type { Comment, Post } from "../../../types/board"
 import styles from "../board.module.css"
 import { formatDateTime, listHref, navigateTo, noticeCategoryLabels, writerLabel } from "../boardModel"
+import type { BoardKind } from "../boardModel"
 import { CommentThread } from "../components/CommentThread"
 
 type LoadState = "loading" | "ready" | "not-found" | "error"
 
-export function BoardDetailScreen({ postId, enabled }: { postId: number | null; enabled: boolean }) {
+export function BoardDetailScreen({ kind, postId, enabled }: { kind: BoardKind; postId: number | null; enabled: boolean }) {
   const [post, setPost] = useState<Post | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [state, setState] = useState<LoadState>("loading")
@@ -87,14 +88,14 @@ export function BoardDetailScreen({ postId, enabled }: { postId: number | null; 
     setDeleteError("")
     try {
       await deletePost(post.post_id)
-      navigateTo(listHref)
+      navigateTo(listHref(kind))
     } catch (caught) {
       setDeleteError(caught instanceof Error ? caught.message : "게시글을 삭제하지 못했습니다.")
       setDeleting(false)
     }
   }
 
-  const back = <a className={styles.titleLink} href={listHref}>목록으로</a>
+  const back = <a className={styles.titleLink} href={listHref(kind)}>목록으로</a>
 
   if (postId === null) return <EmptyState title="게시글 주소가 올바르지 않습니다" action={back}>목록에서 게시글을 다시 선택하세요.</EmptyState>
   if (!enabled) return <EmptyState title="서버 연결 후 게시글을 불러옵니다" />

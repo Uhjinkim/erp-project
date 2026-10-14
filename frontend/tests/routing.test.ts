@@ -22,7 +22,7 @@ describe("screen routing", () => {
     const ids = modules.flatMap((module) => module.screens.map((screen) => screen.id))
     expect(new Set(ids).size).toBe(ids.length)
     // Login and expired/forbidden are handled by the session layer.
-    expect(ids.length).toBe(35)
+    expect(ids.length).toBe(36)
   })
   test("detail query remains on the registered screen", () => {
     const route = { moduleId: "vacation", screenId: "leave-detail", search: "requestId=12" }

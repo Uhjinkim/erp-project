@@ -6,7 +6,7 @@ import { createPost, getEligibleNoticeCategories } from "../../../api/board"
 import { Alert, Button, Card, EmptyState, ErrorState, Select, Spinner, Textarea, TextInput } from "../../../components/ui"
 import type { NoticeCategory, PostType } from "../../../types/board"
 import styles from "../board.module.css"
-import { listHref, navigateTo, noticeCategoryLabels, postHref } from "../boardModel"
+import { kindOf, listHref, navigateTo, noticeCategoryLabels, postHref } from "../boardModel"
 
 type FieldErrors = Record<string, string[]>
 type LoadState = "loading" | "ready" | "error"
@@ -63,7 +63,7 @@ export function PostWriteScreen({ enabled }: { enabled: boolean }) {
       const saved = await createPost(writingNotice
         ? { post_type: "공지", notice_category: category || undefined, title, content }
         : { post_type: "일반", title, content })
-      navigateTo(postHref(saved.post_id))
+      navigateTo(postHref(kindOf(saved), saved.post_id))
     } catch (caught) {
       if (caught instanceof ApiError) setErrors(caught.fieldErrors)
       setMessage(caught instanceof Error ? caught.message : "게시글을 등록하지 못했습니다.")
@@ -77,7 +77,7 @@ export function PostWriteScreen({ enabled }: { enabled: boolean }) {
   if (state === "loading") return <Spinner label="작성 화면을 준비하는 중" />
   if (state === "error") return <ErrorState onRetry={() => void load()}>{loadError}</ErrorState>
 
-  return <Card title="게시글 작성" actions={<a className={styles.titleLink} href={listHref}>목록으로</a>}>
+  return <Card title="게시글 작성" actions={<a className={styles.titleLink} href={listHref(writingNotice ? "notice" : "general")}>목록으로</a>}>
     <form className={styles.stack} onSubmit={submit} noValidate>
       {message && <Alert tone="error">{message}</Alert>}
       {canWriteNotice && <Select label="게시글 유형" value={postType} disabled={saving} onChange={(event) => setPostType(event.target.value as PostType)}>

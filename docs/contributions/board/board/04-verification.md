@@ -8,7 +8,7 @@
   - `uv run python manage.py check`: 이상 없음
   - `uv run python manage.py makemigrations --check --dry-run`: 변경 없음
 - Frontend(`frontend/`)
-  - `bun run test`: 12개 통과(게시판 `tests/board.test.ts` 4개 포함)
+  - `bun run test`: 28개 통과(게시판 `tests/board.test.ts` 6개 포함, 2026-10-14)
   - `bun run lint`: 통과
   - `bun run build`: 통과
 - 공유 개발 DB
@@ -26,9 +26,10 @@
   `notice-categories/eligible/`이 역할 배정에 따라 `[]` / `["PAYROLL"]`을 반환, 게시글별
   `comment_count`, 경영담당자의 타인 글·댓글 삭제 204와 수정 403, 작성자·타인·경영담당자별
   `can_edit`·`can_delete`(목록·상세·댓글)
-- `frontend/tests/board.test.ts`: 게시판 메뉴가 목록·작성 두 화면뿐인지, 글 보기 주소
-  (`board-list?postId=`)가 목록 화면으로 해석되는지, `postId`는 양의 정수만 허용하는지,
-  제목·작성자 검색 필터
+- `frontend/tests/board.test.ts`: 게시판 메뉴가 공지·일반·작성 순서인지, 각 게시판 글 보기
+  주소가 해당 목록 화면으로 해석되는지, `postId`는 양의 정수만 허용하는지, 공지게시판은 공지만
+  분류·제목으로 거르는지, 일반게시판은 일반글만 제목·작성자로 거르는지, 게시판별 번호가 가장
+  오래된 글부터 1로 매겨지는지
 
 ## 남은 검증
 
