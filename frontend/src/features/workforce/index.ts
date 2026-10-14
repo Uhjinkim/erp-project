@@ -1,1 +1,1 @@
-export { WorkforcePanel } from "../../components/WorkforcePanel"
+export { WorkforceScreen } from "./WorkforceScreen"
