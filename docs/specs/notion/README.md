@@ -37,3 +37,13 @@ Markdown 스냅샷이다. Notion이 원문(source of truth)이며, 코드 변경
 
 로컬에 남아 있던 휴가 수정과 원격 dev의 다른 모듈을 함께 반영한 결과는
 [2026-10-13 원격·로컬 통합 확인](../../reports/2026-10-13_dev-local-integration.md)에 기록한다.
+
+
+## 2026-10-14 기여 문서 구현 통합
+
+dev 4f77219를 기준으로 [유지·변경·충돌](../../reports/2026-10-14_contribution-docs-integration.md)을
+분류했다. 해결된 업무 대상 조회·화면 진입, 누락된 HR 생애주기/이력 API와 현재 테이블 구현을
+06·08·workforce 대응표 및 공용 토대 계약에 반영했다. 02·03·04·07의 원문 정책은 유지했다.
+[최신 미결 의제](../../reports/2026-10-14_module-review-agenda.md)와
+[기여 통합 현황](../../contributions/integration-status.md)을 함께 확인한다.
+이번에는 Notion 원문을 조회·수정하지 않았으며 원문 확인일을 최신 코드 확인일로 바꾸지 않았다.

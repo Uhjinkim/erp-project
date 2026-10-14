@@ -1,6 +1,7 @@
 # 프론트엔드 공통 토대 사용 계약
 
-- 구현·검증일: 2026-10-13
+- 토대 구현일: 2026-10-13
+- 현재 연결 계약 확인일: 2026-10-14
 - 기준: dev, [모듈 배정 안내서](./frontend-module-delivery.md)
 - 범위: 공통 UI·앱 조립·모듈 진입점. 39개 업무 화면 전체의 완성을 뜻하지 않는다.
 
@@ -11,8 +12,8 @@
 
 주소는 `#/모듈ID/화면ID`다. 예: `#/vacation/leave-apply`,
 `#/vacation/leave-detail?requestId=12`. 상세 식별자·필터는 `Route.search`를 URLSearchParams로
-읽는다. 각 기능이 실제로 사용할 키·필수 여부는 모듈 작업 카드에 기록한다. 화면 ID는 Graphite
-와이어프레임 ID를 유지한다. 로그인·세션 만료는 라우트가 아니라 인증 상태로 표시한다.
+읽는다. 각 기능이 실제로 사용할 키·필수 여부는 모듈 작업 카드에 기록한다. 화면 ID는 기본적으로 Graphite
+와이어프레임 ID를 따른다. 게시판의 현재 메뉴 분리는 2절의 실제 계약을 따른다. 로그인·세션 만료는 라우트가 아니라 인증 상태로 표시한다.
 
 - `app/routing.ts`: Route, parseRoute, routeHref, findScreen의 순수 계약
 - `app/useRoute.ts`: hashchange 구독. 링크 이동·뒤로가기·새로고침 때 URL을 유지
@@ -27,20 +28,42 @@
 
 ## 2. 현재 연결된 화면과 후속 작업
 
-| 모듈 | 현재 연결 화면 | 후속 작업 |
-| --- | --- | --- |
-| vacation | leave-apply: 새 공통 UI 기반 신청·내 목록·승인 목록·처리·재신청 | 상세·history 조회, 화면별 분리 |
-| board | board-list: 기존 BoardPanel | 목록·상세·작성 분리, 확정 정책 반영 |
-| workforce | employee-list: 기존 WorkforcePanel | 사원·조직 화면 분리, 개인정보 UI 중복 정리 |
-| evaluation | evaluation-team: 기존 EvaluationPanel | 대상·작성·관리·본인 화면 분리 |
-| payroll | payroll-periods: 기존 PayrollPanel | 기간·항목·확정·본인 화면 분리 |
-| profile | my-profile: 본인 정보 카드·기존 개인정보 편집기 | 변경 요청·이력·처리 화면 분리 |
-| system | system-health: 공통 연결 상태 | 계정 관리·확정 권한에 따른 운영 동선 |
-| home | 등록·준비 중 안내 | 집계 API와 업무 카드 연결 |
+2026-10-14 dev 4f77219의 registration·공개 진입점·기여 문서를 대조했다.
+“연결”은 화면 구현이 있다는 뜻이며 제품 정책 승인·시안 검수·실제 서버 검증 완료를 뜻하지 않는다.
 
-그 밖의 등록 화면은 준비 중 안내를 표시한다. 기존 패널은 여러 기능을 함께 포함하므로 진입
-화면 이름만으로 해당 시안의 구현 완료를 판정하지 않는다. 모듈 분리·디자인 재설계는 배정된 담당자가
-진행한다. 미확정 HR·BD·EV·PY·INT·OPS 의제는 기존 검토 절차를 따른다.
+| 모듈 | 공개 진입점·현재 화면 | 남은 확인 |
+| --- | --- | --- |
+| profile | ProfileScreen: my-profile, contact-edit, change-request, change-history, change-queue, change-review | HR-01~03, 실제 처리자·경합 검증 |
+| workforce | WorkforceScreen: employee-list, employee-detail, employee-create, retire, rehire, role-grant, org | UI-HR-01 시안 대조, UI-HR-03 필드 오류, HR/OPS 의제 |
+| vacation | VacationPanel: leave-apply, leave-mine, leave-detail, leave-queue, leave-approve, leave-recall, leave-resubmit | UI-LV-01/02 조회 API 공백, 실제 서버 검증 |
+| board | BoardScreen: notice-list, board-list, board-write | BD-01~03, 브라우저 성공·오류·권한 검증 |
+| evaluation | EvaluationModule: evaluation-team, evaluation-form, evaluation-hr, evaluation-mine | EV-01/02 추가 정책, 실제 환경 검증 |
+| payroll | PayrollScreen: payroll-periods, payroll-create, payroll-item, payroll-confirm, payslip | PY-01/02, 실제 지급일·출력 검증 |
+| system | system-health 연결; account-admin 준비 중 | 계정 관리·확정 권한에 따른 운영 동선 |
+| home | home·manager-home 준비 중 | 집계 API와 업무 카드 |
+
+ModuleScreen은 위 공개 진입점에 route/user/연결 상태를 전달한다. 다른 feature의 내부 화면을
+공용 셸에서 import하지 않는다. 구형 BoardPanel·WorkforcePanel·EvaluationPanel·PayrollPanel과
+EmployeeInfoCard·PersonalInfoRequests는 삭제돼 현재 계약의 진입점이 아니다.
+
+### 화면별 query 계약
+
+| 모듈 | 현재 query 사용 |
+| --- | --- |
+| profile | my-profile `saved=contact`; change-history `status`, `saved=request`; change-queue `saved=approved/rejected`; change-review `requestId` 필수 |
+| workforce | employee-list `view=retired`, `q`, `dept`, `status`, `page`; 퇴사자 필터 `name`, `empNo`, `dept`, `from`, `to`, `page`; 상세 `empNo` 필수, `tab=history/roles`; retire/rehire/role-grant `empNo` 없으면 대상 검색; org `tab=positions` |
+| vacation | 상세·승인·회수·재신청 `requestId`; 목록 `status`, `type`, `q`, `from`, `to`, `order`, `page`; 개발 인증에서만 `employeeNo` |
+| board | notice-list/board-list `postId` 있으면 같은 게시판의 글 보기; board-detail·notice-write 별도 메뉴 없음. 기본 진입 notice-list |
+| evaluation | form `evalId` 수정 또는 `empNo`, `year` 생성; HR 화면 `evalId`; 팀 연도 선택은 화면 상태 |
+| payroll | 생성·항목·확정 `period=YYYY-MM`; 항목 `statementId`; 기본 진입 payslip |
+
+목록 검색/페이지가 모두 서버 query라는 뜻은 아니다. workforce/profile은 서버 필터를 사용하며
+workforce의 20행 페이지는 반환 배열 안에서 나눈다. vacation은 조회 배열의 필터·정렬·10행 페이지,
+board는 조회 배열의 공지/일반·검색 분리다. 상세 query나 메뉴 변경은 모듈 기여 문서와
+이 계약에 함께 기록한다. 원래 Graphite 39장은 디자인 분석 기준이며 현재 등록/구현 수와 별개다.
+
+INT-01 사원 조회 의존과 UI-HR-02 처리함 연결은 구현으로 해결했다. 다른 HR·BD·EV·PY·OPS 및
+UI 의제는 [최신 검토 의제](../reports/2026-10-14_module-review-agenda.md)를 따른다.
 
 ## 3. 공통 UI 사용
 

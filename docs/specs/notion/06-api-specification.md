@@ -2,7 +2,7 @@
 
 - Notion 원문: <https://app.notion.com/p/3e58eced448d81f4ade6c86fc337bd26>
 - 원문 최종 수정: 2026-10-12
-- 저장소 코드 확인: 2026-10-13 (휴가 수정; Notion 재조회 없음)
+- 저장소 코드 확인: 2026-10-14 (dev 4f77219 기여 통합; Notion 재조회 없음)
 - 기준 구현: Django REST Framework 백엔드의 현재 라우트, 뷰, 직렬화 코드
 - 개발 직접 호출 기본 URL: `http://localhost:8000`
 - nginx 통합 개발환경 기본 URL: `http://localhost:8080`
@@ -94,7 +94,7 @@ Swagger 엔드포인트는 현재 구현되어 있지 않다. 모든 API 경로�
 | `GET` | `/api/workforce/` | 인증 사용자 | 사원·조직 API 탐색 루트 |
 | `GET`, `POST` | `/api/workforce/persons/` | HR 관리자 | 인적사항 목록 조회, 생성 |
 | `GET`, `PUT`, `PATCH`, `DELETE` | `/api/workforce/persons/{person_id}/` | HR 관리자 | 인적사항 상세 관리 |
-| `GET` | `/api/workforce/employees/` | HR 관리자 | 사원 목록 조회와 검색; INT-01 연동 의제 |
+| `GET` | `/api/workforce/employees/` | HR 관리자 | 사원 목록 조회와 검색; 평가·급여는 전용 대상 API 사용(INT-01) |
 | `POST` | `/api/workforce/employees/` | HR 관리자 | 사원 생성 |
 | `GET` | `/api/workforce/employees/{emp_no}/` | 본인 또는 HR 관리자 | 사원 상세 조회 |
 | `PUT`, `PATCH`, `DELETE` | `/api/workforce/employees/{emp_no}/` | HR 관리자 | 사원 수정, 삭제 |
@@ -588,7 +588,7 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 
 ## 7. 기여 문서 부분 통합 API
 
-- 코드 확인일: 2026-10-12. 세션 인증·CSRF·사원번호 연결이 필요하다.
+- 코드 확인일: 2026-10-14. 세션 인증·CSRF·사원번호 연결이 필요하다.
 - 아래는 기존 제품 기능에 대응하는 기본 경로와 현재 transport 동작이다.
 - 댓글과 평가 추가 워크플로 API는 이번 정본 통합에서 제외했다. 해당 경로가 코드에서 제거된 것은 아니다.
 - 현재 구현의 보류 제한은 의제에 연결한다. 모듈 전체의 명세 준수 완료를 선언하지 않는다.
@@ -617,6 +617,48 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 현재 구현에는 HR 요청자의 특별 처리자 판정·대기 1건 제한·로그인 이메일 동기화가 있다.
 이는 확정 제품 정책으로 채택하지 않았으며 HR-03에서 다룬다. 계좌 보호·테이블 차이는 HR-01·HR-02 대상이다.
 
+### 7.1.1 사원 등록·고용 생애주기·인사이력의 현재 API
+
+아래는 FN-HR-006~010의 현재 transport 계약이다. 구체 운영 조건과 남은 일반 CRUD 우회·정본 문제는
+[최신 의제 HR-01·HR-03·OPS-01](../../reports/2026-10-14_module-review-agenda.md)에서 구분한다.
+모든 경로는 HR 관리자(superuser 포함) 전용이다.
+
+| 메서드 | `/api/workforce/` 상대 경로 | 요청·성공 응답 |
+| --- | --- | --- |
+| POST | `new-hires/` | 통합 등록, 201 등록 결과 |
+| POST | `employees/{emp_no}/terminate/` | `term_date` → 200 사원 상세 |
+| GET | `employees/terminated/` | `name`, `emp_no`, `dept_no`, `term_date_from`, `term_date_to` → 200 퇴사일 최신순 배열 |
+| POST | `persons/{person_id}/rehire/` | 신규 고용 입력 → 201 새 사번 등록 결과 |
+| GET | `employees/{emp_no}/history/` | 200 인사이력 배열, 시작일 최신순 |
+| POST | `employees/{emp_no}/history/` | `start_date`, `dept_no`, `position_code`, `base_salary`, 선택 `previous_base_salary`, `reason` → 201 발령 결과 |
+| POST | `employees/{emp_no}/history/{history_id}/correct/` | `start_date`, `dept_no`, `position_code`, `base_salary`, 필수 `reason` → 200 정정 결과 |
+| POST | `employees/{emp_no}/history/{history_id}/cancel/` | 필수 `reason` → 200 취소 결과 |
+| GET | `employees/{emp_no}/history/changes/` | 200 발령·정정·취소 기록 배열, 최신순 |
+
+등록 필수 입력: `name`, `birth_date`, `gender`(M/F), `email`, `hire_date`, `dept_no`,
+`position_code`, `base_salary`(0 이상, 소수 2자리). 선택 입력: `phone`, `extension_no`,
+`address`, `role_codes[]`, `account: {password}`. 사번 `emp_no` 입력은 400으로 거절한다.
+재입사는 `name`·`birth_date`·`gender`가 선택이며 보내면 기존 Person 정보를 갱신한다.
+등록 결과는 `emp_no`, `person_id`, `history_id`, `name`, `email`, `dept_no`, `position_code`,
+`hire_date`, `tenure_status`, `account`(id/email 또는 null), `roles[]`이며 비밀번호는 응답하지 않는다.
+등록·계정·역할·최초 인사이력은 한 트랜잭션으로 처리한다.
+
+현재 구현의 퇴사일은 입사일 이상·오늘 이하이며, 재입사는 모든 이전 고용이 퇴사 상태이고
+마지막 퇴사일 이후 새 입사일이어야 한다. 발령은 오늘 이하·부서/직급 변동이어야 하며
+기존 진행 이력을 전날로 마감한다. 이력이 없는 사원의 첫 발령은 이전 기간 기본급을 추가로 받는다.
+최근 진행 이력만 정정·취소한다. 첫 이력 취소는 거절한다. 정정·취소 사유는 최대 500자다.
+
+이력 항목: `history_id`, `start_date`, `end_date`, `dept_no`, `dept_name`, `position_code`,
+`position_name`, `base_salary`. 발령·정정·취소 결과: `history[]`, `released_head_dept_nos[]`,
+`restored_head_dept_nos[]`. 변경 기록: `history_id`, `action`(발령/정정/취소), `before`, `after`,
+`reason`, `changed_by`, `changed_at`, 해제·복원 부서번호 배열. API 응답에는 DB의 `change_id`를
+노출하지 않는다. 삭제한 최근 이력도 기록의 history_id로 추적한다.
+
+DRF 입력 오류는 필드 배열, 업무 오류는 400 `detail`·선택 `field` 형식이다.
+일반적으로 없는 사원은 404, 없는 재입사 Person은 현재 구현에서 400이다.
+고유 충돌 재시도 소진은 409, 사번 시퀀스 뒤처짐은 500이다. 기존 직접 사번 입력 API와
+일반 PATCH의 상태·소속 변경 경로는 여전히 있어 전용 처리와의 정책 통합이 남았다.
+
 ### 7.2 게시글 기본 기능
 
 | 메서드 | 경로 | 기존 기능 / 현재 동작 |
@@ -624,14 +666,20 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 | GET, POST | `/api/board/posts/` | 목록 / 일반·공지 작성 |
 | GET | `/api/board/posts/{id}/` | 상세 조회 |
 | PATCH | `/api/board/posts/{id}/` | 작성자 또는 superuser가 제목·내용 수정 |
-| DELETE | `/api/board/posts/{id}/` | 작성자 또는 superuser가 삭제; 204 |
+| DELETE | `/api/board/posts/{id}/` | 작성자·superuser 또는 경영담당자 삭제; 204. 추가 경영담당자 권한은 BD-03 보류 |
+| GET | `/api/board/notice-categories/eligible/` | 현재 사원의 작성 가능 분류 `{categories: [...]}` |
 
 작성 입력은 `post_type`(`일반`/`공지`), `title`(최대 100자), `content`다.
 일반글은 분류를 가지지 않는다. 공지 입력 `notice_category`는 현재 코드가 전달값의 자격을 검사한다.
 분류 범위와 BD-008 자동 부여의 차이는 BD-01 의제로 보류한다.
 수정 입력은 `title`, `content`이며 분류 변경은 받지 않는다. 삭제는 `deleted_at`을 기록하고
 목록·상세에서 숨기는 현재 구현 방식이다. 삭제 방식은 별도 새 비즈니스 규칙으로 추가하지 않는다.
-게시글 응답은 `writer_name`을 포함한다. 권한 오류 403, 없는/삭제된 글 404,
+게시글 응답은 `writer_name`, `comment_count`, `can_edit`, `can_delete`를 포함한다.
+권한 필드는 동일한 서버 수정/삭제 검사로 계산하며 프론트는 역할 문자열 대신 이 값을 소비한다.
+comment_count는 삭제되지 않은 댓글·답글 수를 조회 시 계산하고 저장 컬럼은 없다.
+공지 자격은 MANAGEMENT/HR/PAYROLL의 부분집합이며 빈 배열이면 일반글 작성만 안내한다.
+댓글 GET/POST `/api/board/posts/{id}/comments/`, PATCH/DELETE `/api/board/comments/{id}/`는
+현재 코드에 있지만 기존 FN-BD 정의에 없는 BD-02 보류 기능이며 정본 기능으로 추가하지 않는다. 권한 오류 403, 없는/삭제된 글 404,
 그 밖의 도메인 오류 400과 `code`, `detail`을 사용한다.
 
 ### 7.3 평가 기본 기능의 현재 경로
@@ -639,13 +687,18 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 | 메서드 | 경로 | 기존 기능 |
 | --- | --- | --- |
 | GET, POST | `/api/evaluations/` | 허용 범위 목록 / 평가 작성 |
+| GET | `/api/evaluations/targets/?year=YYYY` | 현재 사용자가 새 평가를 작성할 수 있는 최소 대상 목록 |
 | GET, PATCH | `/api/evaluations/{id}/` | 상세 / 점수·의견 수정 |
 | POST | `/api/evaluations/{id}/confirm/` | HR 확정 |
 
 작성 본문은 `emp_no`, `eval_year`, `score`, 선택 `comments`다. 목록은 `year` 필터를 지원한다.
 등급은 서버가 계산하고 대상자는 확정된 본인 평가만 조회한다. 권한 밖 평가는 404로 숨긴다.
 현재 코드는 HR 부서장 작성 금지, 제출 후 확정, 생성 연도·조직 기준일 등 추가 제한을 적용한다.
-따라서 위 기능의 구현 완료는 EV-01·EV-02와 INT-01 해결 후 판단한다.
+targets의 필수 year는 4자리이며 현재 생성 연도 제한을 적용한다. 응답은 `emp_no`, `name`,
+`dept_no`, `pos_code` 배열이다. 지정 평가자·재직·근속 설정에 맞는 대상 중 자기 자신과
+이미 해당 연도 평가가 있는 사원을 제외한다. 개인 연락처·계좌를 반환하지 않는다.
+프론트 작성 대상은 이 API, 본인 결과는 평가 목록만 호출한다. HR 전용 사원 목록 의존은
+INT-01에서 구현 해결했다. 추가 정책의 전체 준수 판단은 EV-01·EV-02 결정 후 수행한다.
 추가 제출·반려·재배정·제외·확정취소·이력 경로를 기존 FN-EV 기능으로 승격하지 않는다.
 
 ### 7.4 급여 기본 기능
@@ -655,13 +708,21 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 | 메서드 | 상대 경로 | 기존 기능 / 현재 입력 |
 | --- | --- | --- |
 | GET | `components/` | 활성 지급·공제 마스터 조회 |
+| GET | `employees/` | 급여담당자 전용 최소 업무 대상 목록 |
 | GET | `statements/` | 본인 목록; `emp_no` 또는 `all=true` 관리 조회는 급여담당자 |
-| POST | `statements/` | 생성: `emp_no`, `year`, `month`, 선택 `items` |
+| POST | `statements/` | 생성: `emp_no`, `year`, `month`, 선택 `items`, `payment_date` |
 | GET | `statements/{id}/` | 본인 또는 급여담당자 상세 |
-| PUT | `statements/{id}/items/` | 작성중 항목 교체: `items` |
+| PUT | `statements/{id}/items/` | 작성중 항목 교체: `items`, 선택 `payment_date` |
+| GET | `statements/{id}/excel/` | 확정 명세서 xlsx, 본인 또는 급여담당자. 작성중은 400 |
 | POST | `statements/{id}/confirm/` | 확정 또는 이력에 따른 재확정 |
 | POST | `statements/{id}/cancel-confirmation/` | 확정취소: 공백이 아닌 `reason`(최대 255자) |
 | GET | `statements/{id}/history/` | 허용 범위 변경 이력 |
+
+employees 응답은 `emp_no`, `name`, `dept_no`, `dept_name`, `position_name`, `is_active` 배열이다.
+연락처·계좌를 포함하지 않고 비담당자는 403이다. INT-01의 HR 전체 목록 충돌은 이 경로로 해결했다.
+생성 시 지급일 생략은 현재 구현의 자동 산정, 지정 시 입력 날짜를 사용한다. 작성중에만 변경하며
+변경을 수정 이력에 기록한다. 정산일 정책의 제품 확정은 PY-02에 남는다.
+xlsx는 서버 openpyxl로 생성하며 PDF는 프론트의 브라우저 인쇄 저장이다. PDF API는 없다.
 
 항목은 `component_code`, `amount`(현재 소수 둘째 자리까지, 0 이상)를 사용한다.
 항목 수정은 최소 1건, 확정은 항목이 있는 작성중 급여만 허용한다.

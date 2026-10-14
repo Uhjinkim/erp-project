@@ -2,7 +2,7 @@
 
 - Notion 원문: <https://app.notion.com/p/3d78eced448d8124b3b4d00cd2c0b5f3>
 - 원문 최종 수정: 2026-10-12
-- 저장소 코드 확인: 2026-10-13 (휴가 수정; Notion 재조회 없음)
+- 저장소 코드 확인: 2026-10-14 (dev 4f77219 구현 대조; Notion 재조회 없음)
 - 대상: 공유 개발 PostgreSQL `erp_dev.public`의 ERD 29개 테이블
 - 기준 자료: [ERP 개발 DB 스키마](../../../erp_dev.md), `backend/accounts`, `backend/workforce`, `backend/vacation` 모델과 마이그레이션
 - 용도: ERD의 테이블·컬럼·관계를 구현 관점에서 찾아보기 위한 문서
@@ -226,6 +226,27 @@ ERD에는 대부분의 컬럼에 대한 NULL 허용 여부, 기본값, CHECK 제
 | `position_code` | `varchar(20)` | FK → `positions.position_code` | 당시 직급 |
 | `base_salary` | `numeric(15,2)` |  | 당시 기본급 |
 
+### `emp_history_changes` — 현재 구현의 발령·정정·취소 기록
+
+workforce 0006에 정의된 추가 이력이다. FN-HR-010의 전후 추적 구현으로 기록하며
+정정·취소 범위 등 운영 정책을 새 제품 규칙으로 확정하지 않는다.
+
+| 컬럼 | Django 정의 | 참조·설명 |
+| --- | --- | --- |
+| change_id | BigAutoField | PK |
+| emp_no | ForeignKey | employees, RESTRICT |
+| history_id | BigIntegerField | 원 이력 ID, FK 아님. 취소된 이력 추적 |
+| action | varchar(10) | 발령/정정/취소 |
+| before_values, after_values | nullable JSONField | 기간·부서·직급·기본급 전후 값 |
+| released_head_dept_nos, restored_head_dept_nos | JSONField, 기본 빈 배열 | 해제·복원 부서장 부서번호 |
+| reason | nullable varchar(500) | 처리 사유 |
+| changed_by_emp_no | nullable ForeignKey | employees, RESTRICT |
+| changed_at | DateTimeField | 처리 시각 |
+
+인덱스는 `(emp_no, history_id)`, 기본 정렬은 변경시각·change_id 내림차순이다.
+PostgreSQL JSON 표현 및 실제 적용은 배포 확인과 구분한다. 기여자의 2026-10-13 공유 개발 DB
+적용 기록이 있으며 이번 검토에서는 DB를 재조회하지 않았다.
+
 ### `employee_change_requests` — 사원 정보 변경 요청
 
 | 컬럼 | 타입 | 키·참조 | 설명 |
@@ -439,6 +460,20 @@ ERD에는 대부분의 컬럼에 대한 NULL 허용 여부, 기본값, CHECK 제
 
 업무 규칙의 원문은 Notion이며, 저장소의 [Notion 명세 스냅샷](./README.md)은
 구현 추적용이다. 이 문서는 그 제품 규칙을 새로 확정하지 않는다.
+
+## 2026-10-14 구현 보완과 배포 기록 구분
+
+- workforce 0005는 Employee.employee_no를 AutoField로 상태 변경하고 PostgreSQL 사번 시퀀스를
+  현재 최대값에 맞춘다. 직접 사번 입력을 계속하면 뒤처질 수 있으므로 적용 이력만으로 해결 완료가 아니다.
+- workforce 0006의 emp_history_changes 정의는 위 표를 따른다. employee_change_requests와
+  personal_info_change_requests의 정본은 HR-01 미결이며 이전 테이블·데이터를 삭제하지 않는다.
+- 기여자의 날짜별 적용 보고: workforce 0004~0006(2026-10-13), board 0002(2026-10-01)·
+  0003 분류 시드(2026-10-13), payroll 0001~0003(2026-09-23)·0004~0005(2026-10-06),
+  vacation 0003(2026-10-13). 이번 문서 검토의 직접 DB 확인으로 해석하지 않는다.
+- evaluation 0002와 다른 환경의 적용 여부, nullability·배타 제약·금액 CHECK·시드 활성 값은
+  OPS-01 후속 확인이다. 댓글·평가 추가 워크플로·공휴일 구조의 제품 수용은 여전히 보류다.
+
+[최신 통합 보고서](../../reports/2026-10-14_contribution-docs-integration.md)를 확인한다.
 
 ## 2026-10-12 부분 통합 · 구현 상태
 
