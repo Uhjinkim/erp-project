@@ -11,7 +11,7 @@
 
 - Backend: Python 3.13, Django 5.2 LTS, Django REST Framework, uv
 - Frontend: React 19, TypeScript, Vite, Bun 1.4
-- Infrastructure: 원격 PostgreSQL 및 Redis, OpenSSH 로컬 포워딩, 로컬 개발용 nginx
+- Infrastructure: 원격 PostgreSQL 및 Redis, Cloudflare Tunnel 경유 OpenSSH 로컬 포워딩, 로컬 개발용 nginx
 - Authentication: 이메일 로그인, Django 서버 세션, HttpOnly 쿠키, CSRF 보호
 
 ### 주요 기능
@@ -62,9 +62,27 @@ Python과 Frontend 의존성은 각각의 디렉터리와 lockfile로 관리합�
 - Python 3.13과 uv
 - Bun 1.4
 - OpenSSH 클라이언트
+- cloudflared (Cloudflare Access SSH 연결용)
 - nginx
 
 Podman, Docker 또는 로컬 PostgreSQL·Redis는 필요하지 않습니다.
+
+### cloudflared 설치
+
+macOS:
+
+```bash
+brew install cloudflared
+```
+
+Windows는 설치 후 새 PowerShell을 엽니다.
+
+```powershell
+winget install --id Cloudflare.cloudflared --exact
+```
+
+Linux는 [Cloudflare 공식 다운로드/설치 안내](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)를 따릅니다.
+설치 후 `cloudflared --version`으로 PATH에서 실행되는지 확인합니다.
 
 ### nginx 설치
 
@@ -151,6 +169,12 @@ Frontend 환경 파일에 넣으면 안 됩니다.
 - `DB_TUNNEL_LOCAL_PORT`, `DB_TUNNEL_REMOTE_HOST`, `DB_TUNNEL_REMOTE_PORT`
 - `REDIS_TUNNEL_LOCAL_PORT`, `REDIS_TUNNEL_REMOTE_HOST`, `REDIS_TUNNEL_REMOTE_PORT`
 
+`SSH_HOST`는 인프라 담당자가 안내한 **Cloudflare SSH 공개 호스트명**으로 변경합니다.
+예제의 `ssh.example.com`은 실제 접속 주소로 교체하며, `https://`·`ssh://`·포트는 붙이지 않습니다.
+SSH 별칭을 쓰면 OpenSSH 설정의 HostName이 그 공개 호스트명을 가리켜야 합니다.
+`SSH_USER`는 기존 서버의 SSH 사용자입니다. `SSH_PORT`는 별도 안내가 없으면 22로 유지하고,
+원격 SSH 서비스 포트는 Cloudflare Tunnel의 서버 측 경로에서 설정합니다.
+
 SSH 비밀번호는 파일이나 명령 인자에 저장하지 않고 실행 시 프롬프트에서 입력합니다.
 
 ### Backend 개발 설정
@@ -222,6 +246,13 @@ SSH 터널을 먼저 연 뒤 통합 개발 스크립트로 Backend, Frontend와 
 
 ### 5.1 SSH 터널
 
+스크립트는 [Cloudflare 공식 SSH 연결 방식](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/use-cases/ssh/ssh-cloudflared-authentication/)에 따라
+OpenSSH에 `ProxyCommand=cloudflared access ssh --hostname %h`를 전달합니다.
+별도로 로컬 cloudflared TCP 포트를 띄우거나 사용자 SSH 설정에 ProxyCommand를 추가할 필요는 없습니다.
+최초 연결이나 Access 세션 만료 시 브라우저에서 조직의 Cloudflare Access 인증을 완료한 뒤,
+기존 SSH 키 또는 SSH 비밀번호로 서버 인증을 진행합니다. Access 인증은 서버 SSH 인증을 대체하지 않습니다.
+
+
 macOS/Linux:
 
 ```bash
@@ -247,6 +278,8 @@ Windows PowerShell:
 ```powershell
 .\scripts\ssh-tunnel.ps1 -EnvFile <TUNNEL_ENV_FILE>
 ```
+
+[Cloudflared 전환·검증 기록](docs/reports/2026-10-22_cloudflared-ssh-tunnel.md)을 참고합니다.
 
 ### 5.2 통합 개발환경 실행
 

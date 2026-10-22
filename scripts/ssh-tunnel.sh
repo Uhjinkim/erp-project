@@ -67,6 +67,14 @@ if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ]; then
     exit 1
 fi
 
+# %h is expanded inside ProxyCommand, so accept only a hostname/SSH alias here.
+case "$SSH_HOST" in
+    -* | *[!a-zA-Z0-9_.-]*)
+        echo "SSH_HOST must be a hostname or SSH alias, without a URL scheme or shell characters." >&2
+        exit 1
+        ;;
+esac
+
 check_port() {
     name=$1
     value=$2
@@ -95,8 +103,14 @@ if ! command -v ssh >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "cloudflared not found. Install it and add it to PATH before opening the SSH tunnel." >&2
+    exit 1
+fi
+
 set -- ssh \
     -N \
+    -o "ProxyCommand=cloudflared access ssh --hostname %h" \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=60 \
     -o ServerAliveCountMax=3 \
@@ -113,6 +127,7 @@ set -- "$@" \
 
 echo "Opening PostgreSQL tunnel on $SSH_TUNNEL_BIND_HOST:$DB_TUNNEL_LOCAL_PORT"
 echo "Opening Redis tunnel on $SSH_TUNNEL_BIND_HOST:$REDIS_TUNNEL_LOCAL_PORT"
+echo "Complete Cloudflare Access browser sign-in if prompted, then SSH authentication."
 echo "Keep this terminal open. Press Ctrl+C to close the tunnels."
 
 exec "$@"
