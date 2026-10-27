@@ -26,14 +26,6 @@
 내비게이션 골격이며, 시안의 역할 필터를 제품 권한표로 옮기지 않았다. 업무 API가 실제 접근 권한을
 검사하고 기능 담당자가 확인된 정책에 따라 메뉴·액션 노출을 구체화한다.
 
-확정된 메뉴 노출 정책(2026-10-27):
-
-- 사원·조직(workforce) 메뉴는 활성 `HR_MANAGER` 역할이 있는 계정에게만 보인다. 그 외 사용자에게는
-  메뉴를 숨기고, 주소로 직접 들어와도 화면을 그리지 않는다. 서버 API의 HR 전용 검사는 그대로 유지한다.
-  모듈 registration의 `requiredRole`과 `visibleModules(user)`가 셸 메뉴·화면 해석에 함께 적용된다.
-- 내 정보(profile)의 수정은 my-profile의 `수정` 버튼으로 같은 화면에서 진행하고, `수정완료`는 즉시 반영이
-  아니라 개인정보 수정 요청 제출이다. 인사관리자가 승인해야 반영된다(HR-002).
-
 ## 2. 현재 연결된 화면과 후속 작업
 
 2026-10-14 dev 4f77219의 registration·공개 진입점·기여 문서를 대조했다.
@@ -41,8 +33,8 @@
 
 | 모듈 | 공개 진입점·현재 화면 | 남은 확인 |
 | --- | --- | --- |
-| profile | ProfileScreen: my-profile(보기·수정 모드), change-history, change-queue, change-review | HR-01~03, 실제 처리자·경합 검증. contact-edit·change-request는 2026-10-27 my-profile 수정 모드로 통합 |
-| workforce | WorkforceScreen: employee-list, employee-detail, employee-create, retire, rehire, role-grant, org (registration `requiredRole: HR_MANAGER`) | UI-HR-01 시안 대조, UI-HR-03 필드 오류, HR/OPS 의제 |
+| profile | ProfileScreen: my-profile, contact-edit, change-request, change-history, change-queue, change-review | HR-01~03, 실제 처리자·경합 검증 |
+| workforce | WorkforceScreen: employee-list, employee-detail, employee-create, retire, rehire, role-grant, org | UI-HR-01 시안 대조, UI-HR-03 필드 오류, HR/OPS 의제 |
 | vacation | VacationPanel: leave-apply, leave-mine, leave-detail, leave-queue, leave-approve, leave-recall, leave-resubmit | UI-LV-01/02 조회 API 공백, 실제 서버 검증 |
 | board | BoardScreen: notice-list, board-list, board-write | BD-01~03, 브라우저 성공·오류·권한 검증 |
 | evaluation | EvaluationModule: evaluation-team, evaluation-form, evaluation-hr, evaluation-mine | EV-01/02 추가 정책, 실제 환경 검증 |
@@ -58,7 +50,7 @@ EmployeeInfoCard·PersonalInfoRequests는 삭제돼 현재 계약의 진입점�
 
 | 모듈 | 현재 query 사용 |
 | --- | --- |
-| profile | my-profile `saved=request`; change-history `status`, `saved=request`; change-queue `saved=approved/rejected`; change-review `requestId` 필수 |
+| profile | my-profile `saved=contact`; change-history `status`, `saved=request`; change-queue `saved=approved/rejected`; change-review `requestId` 필수 |
 | workforce | employee-list `view=retired`, `q`, `dept`, `status`, `page`; 퇴사자 필터 `name`, `empNo`, `dept`, `from`, `to`, `page`; 상세 `empNo` 필수, `tab=history/roles`; retire/rehire/role-grant `empNo` 없으면 대상 검색; org `tab=positions` |
 | vacation | 상세·승인·회수·재신청 `requestId`; 목록 `status`, `type`, `q`, `from`, `to`, `order`, `page`; 개발 인증에서만 `employeeNo` |
 | board | notice-list/board-list `postId` 있으면 같은 게시판의 글 보기; board-detail·notice-write 별도 메뉴 없음. 기본 진입 notice-list |
@@ -117,8 +109,8 @@ CSS @scope와 네이티브 dialog를 지원하는 최신 브라우저를 기준�
 이번 토대에서 이관한 파일은 다음과 같다.
 
 - App의 휴가 → `features/vacation/VacationPanel.tsx`, `api/vacation.ts`, `types/vacation.ts`
-- workforce API의 본인 정보·개인정보 수정 요청 → `api/profile.ts`
-- workforce 타입의 수정 요청 DTO → `types/profile.ts`. EmployeeDetail 등 사원 DTO는 원래 경로 유지
+- workforce API의 본인 정보·변경 요청 → `api/profile.ts`
+- workforce 타입의 변경 요청 DTO → `types/profile.ts`. EmployeeDetail 등 사원 DTO는 원래 경로 유지
 - 기존 업무 패널은 원래 components 경로에 유지하고 각 feature/index.ts에서 공개 진입점을 제공
 
 기존 사원 관리 패널은 과도기적으로 본인 정보·변경 요청 UI도 포함한다. F2·F3가 후속 화면 분리

@@ -483,7 +483,7 @@ PostgreSQL JSON 표현 및 실제 적용은 배포 확인과 구분한다. 기�
 | 게시판 삭제 | 0002는 board_posts.deleted_at 추가 정의를 포함 | 기존 글 삭제 기능의 구현 방식; 실제 적용은 이번에 미확인 |
 | 급여 | 0001은 payroll_items·payrolls·payroll_details·payroll_history 상태 등록 | 기존 4개 legacy 테이블 매핑 |
 | 평가 | 0001은 evaluations 상태 등록; 0002에 사원·연도 고유 제약 정의 | 기존 조직 스냅샷·사원/연도 1건 기준 유지; EV-02 추가 워크플로는 보류 |
-| 변경 요청 | workforce 0004는 personal_info_change_requests 신규 생성 정의, 0007은 previous/requested_phone·address 추가(2026-10-27 HR-002) | 기존 employee_change_requests와 다르므로 HR-01에서 정본 구조 검토 |
+| 변경 요청 | workforce 0004는 personal_info_change_requests 신규 생성 정의 | 기존 employee_change_requests와 다르므로 HR-01에서 정본 구조 검토 |
 
 `board_posts.deleted_at`은 모델에서 NULL 가능한 DateTimeField다. 값이 있으면 삭제된 글로 처리한다.
 board 0002에 함께 정의된 board_comments는 BD-02 추가 기능으로 정본 테이블 설계 통합에서 제외했다.
