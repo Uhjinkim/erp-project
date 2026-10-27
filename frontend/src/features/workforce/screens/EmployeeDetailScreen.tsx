@@ -65,7 +65,7 @@ function InfoPanel({ employee }: { employee: EmployeeDetail }) {
           { key: "extension", label: "내선번호", value: employee.extension_no ?? "미등록" },
           { key: "address", label: "주소", value: employee.address ?? "미등록" },
         ]} />
-        <p className={styles.hint}>사내 이메일·급여계좌 변경은 본인의 변경 요청과 승인 절차로만 처리합니다(HR-003).</p>
+        <p className={styles.hint}>연락처·주소·사내 이메일·급여계좌 변경은 본인의 개인정보 수정 요청과 인사관리자 승인으로만 처리합니다(HR-002).</p>
       </Card>
       <Card title="급여계좌" actions={employee.account_no && (
         <Button variant="ghost" size="small" aria-pressed={showAccount} onClick={() => setShowAccount(!showAccount)}>{showAccount ? "가리기" : "전체 보기"}</Button>

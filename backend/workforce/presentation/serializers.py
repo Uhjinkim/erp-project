@@ -116,10 +116,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value: str | None) -> str | None:
         value = value.strip().lower() if value else value
-        # HR-003: 등록 이후 사내 이메일은 변경 요청·승인 절차로만 바꾼다.
+        # HR-002/HR-003: 등록 이후 사내 이메일은 수정 요청·승인 절차로만 바꾼다.
         if self.instance is not None and value != self.instance.email:
             raise serializers.ValidationError(
-                "사내 이메일은 개인정보 변경 요청과 승인 절차로만 변경할 수 있습니다."
+                "사내 이메일은 개인정보 수정 요청과 승인 절차로만 변경할 수 있습니다."
             )
         return value
 
