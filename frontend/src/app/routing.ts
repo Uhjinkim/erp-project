@@ -3,6 +3,8 @@ export type ModuleRegistration = {
   label: string
   icon: string
   entry: string
+  // 지정하면 이 역할이 활성인 사용자에게만 메뉴를 보이고 화면을 연다. 서버 권한 검사는 별도로 유지한다.
+  requiredRole?: string
   screens: { id: string; title: string }[]
 }
 

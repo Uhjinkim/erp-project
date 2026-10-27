@@ -9,14 +9,6 @@ export async function getMyEmployeeInfo() {
 const jsonHeaders = { "Content-Type": "application/json" }
 const changeRequestsPath = "/api/workforce/personal-info-requests/"
 
-export async function updateMyContact(values: { phone: string | null, address: string | null }) {
-  return requestJson<EmployeeDetail>("/api/workforce/employees/me/", {
-    method: "PATCH",
-    headers: jsonHeaders,
-    body: JSON.stringify(values),
-  })
-}
-
 export async function listChangeRequests(
   options: { status?: ChangeRequestStatus, processable?: boolean, mine?: boolean } = {},
 ) {

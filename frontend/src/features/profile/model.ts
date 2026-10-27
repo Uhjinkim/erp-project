@@ -4,6 +4,8 @@ import type { ApprovalRequiredValues, ChangeRequestStatus } from "../../types/pr
 export type ChangeField = keyof ApprovalRequiredValues
 
 export const CHANGE_FIELDS: { key: ChangeField; label: string }[] = [
+  { key: "phone", label: "연락처" },
+  { key: "address", label: "주소" },
   { key: "email", label: "사내 이메일" },
   { key: "bank_code", label: "은행 코드" },
   { key: "account_no", label: "급여계좌" },
@@ -64,40 +66,44 @@ export function formatDateTime(value: string | null) {
   return date.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })
 }
 
-export type ContactForm = { phone: string; address: string }
+export type ProfileEditForm = { phone: string; address: string; email: string; bank_code: string; account_no: string }
 
-// HR-002: 연락처·주소만 직접 수정한다. 빈 값은 미등록(null)으로 보낸다.
-export function toContactPayload(form: ContactForm) {
-  return { phone: form.phone.trim() || null, address: form.address.trim() || null }
+// 수정 모드 시작 값. 계좌번호는 원문을 입력칸에 띄우지 않고, 바꿀 때만 새로 입력받는다.
+export function toEditForm(current: ApprovalRequiredValues): ProfileEditForm {
+  return { phone: current.phone ?? "", address: current.address ?? "", email: current.email ?? "", bank_code: current.bank_code ?? "", account_no: "" }
 }
 
-export function contactChanged(form: ContactForm, current: { phone: string | null; address: string | null }) {
-  const next = toContactPayload(form)
-  return next.phone !== (current.phone ?? null) || next.address !== (current.address ?? null)
-}
-
-export type ChangeRequestForm = { email: string; bank_code: string; account_no: string }
-
-// FN-HR-003 입력 안내. 현재 값과의 비교·이메일 중복·대기 요청 1건 제한은 서버가 최종 판단한다.
-export function validateChangeRequest(form: ChangeRequestForm): Partial<Record<ChangeField | "form", string>> {
-  const errors: Partial<Record<ChangeField | "form", string>> = {}
-  const email = form.email.trim()
+// HR-002: 바뀐 항목만 수정 요청으로 보낸다. 연락처·주소를 비우면 미등록으로 지우는 요청("")이 된다.
+export function toEditPayload(form: ProfileEditForm, current: ApprovalRequiredValues): Partial<ApprovalRequiredValues> {
+  const payload: Partial<ApprovalRequiredValues> = {}
+  const phone = form.phone.trim()
+  const address = form.address.trim()
+  const email = form.email.trim().toLowerCase()
   const bank = form.bank_code.trim()
   const account = form.account_no.trim()
-  if (!email && !bank && !account) errors.form = "변경할 사내 이메일 또는 급여계좌를 입력하세요."
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "이메일 형식을 확인하세요."
-  if (bank && !account) errors.account_no = "급여계좌는 은행 코드와 계좌번호를 함께 입력해야 합니다."
-  if (account && !bank) errors.bank_code = "급여계좌는 은행 코드와 계좌번호를 함께 입력해야 합니다."
-  return errors
+  if (phone !== (current.phone ?? "")) payload.phone = phone
+  if (address !== (current.address ?? "")) payload.address = address
+  if (email !== (current.email ?? "").toLowerCase()) payload.email = email
+  // 계좌는 은행 코드와 계좌번호를 함께 바꾼다.
+  if (account || bank !== (current.bank_code ?? "")) {
+    payload.bank_code = bank
+    payload.account_no = account
+  }
+  return payload
 }
 
-// 입력하지 않은 항목은 보내지 않아 '변경하지 않음'으로 처리된다.
-export function toChangeRequestPayload(form: ChangeRequestForm): Partial<ApprovalRequiredValues> {
-  const payload: Partial<ApprovalRequiredValues> = {}
-  if (form.email.trim()) payload.email = form.email.trim().toLowerCase()
-  if (form.bank_code.trim()) payload.bank_code = form.bank_code.trim()
-  if (form.account_no.trim()) payload.account_no = form.account_no.trim()
-  return payload
+// FN-HR-002 입력 안내. 현재 값과의 비교·이메일 중복·대기 요청 1건 제한은 서버가 최종 판단한다.
+export function validateEdit(form: ProfileEditForm, current: ApprovalRequiredValues): Partial<Record<ChangeField | "form", string>> {
+  const errors: Partial<Record<ChangeField | "form", string>> = {}
+  const payload = toEditPayload(form, current)
+  if (Object.keys(payload).length === 0) errors.form = "수정된 내용이 없습니다."
+  if (payload.email === "") errors.email = "사내 이메일은 비워 둘 수 없습니다."
+  else if (payload.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) errors.email = "이메일 형식을 확인하세요."
+  if ("account_no" in payload) {
+    if (!payload.bank_code) errors.bank_code = "급여계좌는 은행 코드와 계좌번호를 함께 입력해야 합니다."
+    if (!payload.account_no) errors.account_no = "계좌를 바꾸려면 새 계좌번호를 입력하세요."
+  }
+  return errors
 }
 
 export function firstFieldErrors(fieldErrors: Record<string, string[]>) {

@@ -2,7 +2,7 @@ import { AppShell } from "./components/layout/AppShell"
 import { Alert, EmptyState, ErrorState, PageHeader, Spinner } from "./components/ui"
 import { LoginPanel } from "./components/LoginPanel"
 import { ConnectionStatus } from "./components/ConnectionStatus"
-import { modules } from "./app/modules"
+import { visibleModules } from "./app/modules"
 import { findScreen, routeHref, defaultRoute } from "./app/routing"
 import { useRoute } from "./app/useRoute"
 import { useSession } from "./app/useSession"
@@ -11,10 +11,14 @@ import { ModuleScreen } from "./app/ModuleScreen"
 import { UiGallery } from "./features/design-system/UiGallery"
 import { environment } from "./config/environment"
 
+// 인사 탭(내 정보·사원·조직)에는 개발용 공통 컴포넌트 전시 링크를 두지 않는다.
+const hrModules = ["profile", "workforce"]
+
 function Workspace({ session }: { session: ReturnType<typeof useSession> }) {
   const route = useRoute()
   const connection = useConnection()
-  const current = findScreen(route, modules)
+  // 권한이 없어 숨긴 모듈은 주소로 직접 들어와도 등록되지 않은 화면으로 처리한다.
+  const current = findScreen(route, visibleModules(session.user))
   return <AppShell route={route} user={session.user} pending={session.pending} onLogout={() => void session.logout()}>
     <PageHeader title={current?.screen.title ?? "화면을 찾을 수 없습니다"} description={current?.module.label} />
     {session.error && <Alert tone="error">{session.error}</Alert>}
@@ -22,7 +26,7 @@ function Workspace({ session }: { session: ReturnType<typeof useSession> }) {
     {current ? <ModuleScreen key={`${session.user?.id ?? "development"}:${current.module.id}:${current.screen.id}`} route={route!} user={session.user} connection={connection} /> : <EmptyState title="등록되지 않은 화면입니다" action={<a href={routeHref(defaultRoute)}>휴가 화면으로 이동</a>}>주소를 확인하거나 왼쪽 메뉴에서 화면을 선택하세요.</EmptyState>}
     {route?.moduleId !== "board" && <>
       <details><summary>서비스 연결 상태</summary><ConnectionStatus health={connection.health} checking={connection.checking} message={connection.message} simulatedOffline={connection.simulatedOffline} showDevelopmentControls={environment.connectionTestControls} onCheck={() => void connection.check()} onToggleOffline={connection.toggleOffline} /></details>
-      {environment.isDevelopment && <a href="#/design-system/gallery">공통 컴포넌트 전시</a>}
+      {environment.isDevelopment && !hrModules.includes(route?.moduleId ?? "") && <a href="#/design-system/gallery">공통 컴포넌트 전시</a>}
     </>}
   </AppShell>
 }

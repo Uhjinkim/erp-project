@@ -593,12 +593,11 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 - 댓글과 평가 추가 워크플로 API는 이번 정본 통합에서 제외했다. 해당 경로가 코드에서 제거된 것은 아니다.
 - 현재 구현의 보류 제한은 의제에 연결한다. 모듈 전체의 명세 준수 완료를 선언하지 않는다.
 
-### 7.1 본인 인사정보와 변경 요청
+### 7.1 본인 인사정보와 개인정보 수정 요청
 
 | 메서드 | 경로 | 현재 동작 |
 | --- | --- | --- |
-| GET | `/api/workforce/employees/me/` | 연결된 사원 본인의 상세 조회 |
-| PATCH | `/api/workforce/employees/me/` | `phone`, `address` 수정; 그 외 필드 거절 |
+| GET | `/api/workforce/employees/me/` | 연결된 사원 본인의 상세 조회. 본인 직접 수정(PATCH)은 없음(405) |
 | GET, POST | `/api/workforce/personal-info-requests/` | 본인 요청 또는 HR 전체 조회 / 본인 요청 생성 |
 | GET | `/api/workforce/personal-info-requests/{id}/` | 요청자·HR의 조회 |
 | POST | `/api/workforce/personal-info-requests/{id}/approve/` | 대기 요청 승인 |
@@ -610,12 +609,17 @@ DB 모드에서는 차감형 유형의 잔여일수 행이 없으면 0일로 처
 연결된 사원이 없으면 본인 조회는 404다. 상세 조회는 본인 또는 HR만 허용한다.
 사원 수정에서 사번 변경과 등록 이후 이메일 직접 변경은 400으로 거절한다.
 
-변경 요청 본문은 변경할 `email` 또는 `bank_code`·`account_no`를 사용한다.
+수정 요청 본문은 수정할 `phone`, `address`, `email`, `bank_code`·`account_no`를 사용한다(HR-002, 2026-10-27).
+생략하거나 `null`인 항목은 수정하지 않는다. `phone`·`address`의 빈 문자열은 미등록으로 지우는 요청이다.
+요청·응답의 `previous`·`requested`에도 `phone`·`address`가 포함된다.
 목록은 `status`, `mine=true`, `processable=true` 필터를 지원한다.
 승인은 실제 값을 반영하고 반려·취소는 유지한다. 도메인 오류는 400과 `detail`, 선택 `field`로 반환한다.
 보이지 않는 요청은 404, 열람 가능하지만 처리할 수 없는 요청은 403이다.
 현재 구현에는 HR 요청자의 특별 처리자 판정·대기 1건 제한·로그인 이메일 동기화가 있다.
 이는 확정 제품 정책으로 채택하지 않았으며 HR-03에서 다룬다. 계좌 보호·테이블 차이는 HR-01·HR-02 대상이다.
+
+2026-10-27: HR-002 변경에 따라 연락처·주소의 본인 직접 수정을 없애고 수정 요청으로 옮겼다(workforce 0007에서
+요청 테이블에 연락처·주소 컬럼 추가). 근거는 [결정 보고서](../../reports/2026-10-27_profile-workforce-menu-policy.md)다.
 
 ### 7.1.1 사원 등록·고용 생애주기·인사이력의 현재 API
 

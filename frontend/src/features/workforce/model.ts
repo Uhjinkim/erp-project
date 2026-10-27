@@ -14,9 +14,10 @@ export const HR_MANAGER_ROLE = "HR_MANAGER"
 export const TENURE_STATUSES = ["재직", "휴직", "퇴사"] as const
 export const PAGE_SIZE = 20
 
-// 화면 안내용 판정이다. 실제 권한은 workforce API가 HR-001·HR-005에 따라 검사한다.
+// 사원·조직 메뉴는 HR_MANAGER 역할 계정에게만 보인다(2026-10-27 결정, superuser도 역할이 있어야 함).
+// 화면 안내용 판정이며 실제 권한은 workforce API가 HR-001·HR-005에 따라 검사한다.
 export function isHRManager(user: CurrentUser) {
-  return user.is_superuser || user.roles.includes(HR_MANAGER_ROLE)
+  return user.roles.includes(HR_MANAGER_ROLE)
 }
 
 export function workforceHref(screenId: string, params: Record<string, string | number | undefined> = {}) {

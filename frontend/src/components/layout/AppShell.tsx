@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
-import { modules } from "../../app/modules"
+import { visibleModules } from "../../app/modules"
 import { findScreen, routeHref } from "../../app/routing"
 import type { Route } from "../../app/routing"
 import type { CurrentUser } from "../../types/auth"
@@ -10,6 +10,7 @@ import styles from "./AppShell.module.css"
 export function AppShell({ route, user, pending, onLogout, children }: { route: Route | null; user: CurrentUser | null; pending: boolean; onLogout: () => void; children: ReactNode }) {
   const [search, setSearch] = useState("")
   const [menuOpen, setMenuOpen] = useState(false)
+  const modules = visibleModules(user)
   const current = findScreen(route, modules)
   const screens = current?.module.screens.filter((screen) => screen.title.includes(search)) ?? []
   useEffect(() => {
