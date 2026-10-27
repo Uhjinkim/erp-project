@@ -177,6 +177,8 @@ function HrDetail({ evalId, myNo, enabled, candidates, onChanged }: { evalId: nu
 
   const status = evaluation.eval_status
   const author = isAuthor(myNo, evaluation.evaluator_no, history)
+  // An HR manager sees their own evaluation only once confirmed and may not act on it.
+  const own = evaluation.emp_no === myNo
   const reassignOptions = candidates.filter((candidate) => candidate.emp_no !== evaluation.evaluator_no && candidate.emp_no !== evaluation.emp_no)
   const reasonDialog = dialog && dialog !== "confirm" ? dialog : null
   return <div className={styles.stack}>
@@ -199,9 +201,10 @@ function HrDetail({ evalId, myNo, enabled, candidates, onChanged }: { evalId: nu
             <Button variant="secondary" onClick={() => open("reassign")}>평가자 재배정</Button>
             <Button variant="danger" onClick={() => open("exclude")}>평가 제외</Button>
           </>}
-          {status === "확정" && <Button variant="danger" onClick={() => open("cancel-confirmation")}>확정 취소</Button>}
-          {status === "제외" && <Button variant="secondary" onClick={() => open("cancel-exclusion")}>제외 취소</Button>}
+          {status === "확정" && !own && <Button variant="danger" onClick={() => open("cancel-confirmation")}>확정 취소</Button>}
+          {status === "제외" && !own && <Button variant="secondary" onClick={() => open("cancel-exclusion")}>제외 취소</Button>}
         </div>
+        {own && <p className={styles.hint}>본인의 평가는 다른 인사관리자가 처리합니다.</p>}
         {author && UNCONFIRMED.includes(status) && <p className={styles.hint}>직접 작성한 평가는 반려·확정·제외·재배정을 다른 인사관리자가 처리합니다.</p>}
       </div>
     </Card>

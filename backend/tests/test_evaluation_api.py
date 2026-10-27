@@ -615,3 +615,30 @@ def test_timestamps_are_returned_with_time_zone(org) -> None:
     for value in (created.data["updated_at"], history.data[0]["changed_at"]):
         rendered = str(value)
         assert rendered.endswith("Z") or "+" in rendered, rendered
+
+
+@pytest.mark.django_db
+def test_fn_ev_001_targets_query_count_does_not_grow_with_team_size(
+    org, django_assert_max_num_queries
+) -> None:
+    # The shared DB is reached through an SSH tunnel, so one query per member timed out.
+    department = org["member"].department
+    for offset in range(20):
+        create_employee(1100 + offset, f"bulk{offset}@example.com", department=department)
+    EmploymentHistory.objects.create(
+        employee=org["member"],
+        department=department,
+        position_id="STAFF",
+        start_date=date(2024, 1, 1),
+    )
+    create_evaluation(client_for(org["head"]), emp_no=1001)
+    client = client_for(org["head"])
+
+    with django_assert_max_num_queries(15):
+        response = client.get(f"/api/evaluations/targets/?year={current_year()}")
+
+    assert response.status_code == 200, response.data
+    returned = {row["emp_no"] for row in response.data}
+    assert 1001 not in returned  # already evaluated this year
+    assert {1100, 1119, 2002} <= returned  # members and the child department's head
+    assert 2001 not in returned  # never the evaluator themself

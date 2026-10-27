@@ -106,13 +106,14 @@ function EvaluationEditor({ evalId, user, enabled }: { evalId: number; user: Cur
   const [busy, setBusy] = useState<"" | "save" | "submit">("")
   const [confirmSubmit, setConfirmSubmit] = useState(false)
 
-  const load = useCallback(async () => {
+  // A failed save keeps the typed values so the user can correct them instead of retyping.
+  const load = useCallback(async (resetForm = true) => {
     if (!enabled) return
     setLoadError("")
     try {
       const detail = await getEvaluation(evalId)
       setEvaluation(detail)
-      setForm({ score: detail.score, comments: detail.comments })
+      if (resetForm) setForm({ score: detail.score, comments: detail.comments })
       // History is only for the current evaluator and HR; others simply see none.
       setHistory(await getEvaluationHistory(evalId).catch(() => []))
     } catch (caught) {
@@ -137,7 +138,7 @@ function EvaluationEditor({ evalId, user, enabled }: { evalId: number; user: Cur
     } catch (caught) {
       if (caught instanceof ApiError) setErrors(caught.fieldErrors)
       setMessage({ tone: "error", text: errorText(caught, "처리하지 못했습니다.") })
-      await load()
+      await load(false)
     } finally {
       setBusy("")
       setConfirmSubmit(false)

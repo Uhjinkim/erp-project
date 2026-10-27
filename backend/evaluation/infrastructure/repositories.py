@@ -81,6 +81,13 @@ class DjangoEvaluationRepository(EvaluationRepository):
             eval_year=eval_year,
         ).exists()
 
+    def evaluated_employee_nos(self, employee_nos: set[int], eval_year: str) -> set[int]:
+        return set(
+            EvaluationModel.objects.filter(
+                employee_id__in=employee_nos, eval_year=eval_year
+            ).values_list("employee_id", flat=True)
+        )
+
     def list_all(self, eval_year: str | None = None) -> list[Evaluation]:
         return self._list(self._select_related(), eval_year)
 

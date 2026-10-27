@@ -84,6 +84,9 @@ class FakeEvaluations(EvaluationRepository):
             for item in self.items.values()
         )
 
+    def evaluated_employee_nos(self, employee_nos: set[int], eval_year: str) -> set[int]:
+        return {no for no in employee_nos if self.exists_for(no, eval_year)}
+
     def list_all(self, eval_year: str | None = None) -> list[Evaluation]:
         return [
             item for item in self.items.values() if eval_year in (None, item.eval_year)
