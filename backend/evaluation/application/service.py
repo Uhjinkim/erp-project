@@ -186,11 +186,10 @@ class EvaluationService:
             )
         ]
         with self.unit_of_work_factory() as uow:
-            return [
-                target
-                for target in targets
-                if not uow.evaluations.exists_for(target.employee_no, eval_year)
-            ]
+            evaluated = uow.evaluations.evaluated_employee_nos(
+                {target.employee_no for target in targets}, eval_year
+            )
+        return [target for target in targets if target.employee_no not in evaluated]
 
     def evaluator_candidates(self, actor_no: int) -> list[EvaluatorCandidate]:
         """Who an HR manager may pick when reassigning (FN-EV-001)."""

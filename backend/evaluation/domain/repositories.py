@@ -24,6 +24,10 @@ class EvaluationRepository(ABC):
     def exists_for(self, employee_no: int, eval_year: str) -> bool: ...
 
     @abstractmethod
+    def evaluated_employee_nos(self, employee_nos: set[int], eval_year: str) -> set[int]:
+        """Those of `employee_nos` who already have an evaluation for the year, in one lookup."""
+
+    @abstractmethod
     def list_all(self, eval_year: str | None = None) -> list[Evaluation]: ...
 
     @abstractmethod
