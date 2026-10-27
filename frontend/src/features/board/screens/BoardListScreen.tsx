@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import { listPosts } from "../../../api/board"
+import { getEligibleNoticeCategories, listPosts } from "../../../api/board"
 import { Button, Card, EmptyState, ErrorState, Select, Spinner, Table, TextInput } from "../../../components/ui"
 import type { NoticeCategory, Post } from "../../../types/board"
 import styles from "../board.module.css"
@@ -19,6 +19,7 @@ export function BoardListScreen({ kind, enabled }: { kind: BoardKind; enabled: b
   const [field, setField] = useState<SearchField>("title")
   const [category, setCategory] = useState<CategoryFilter>("all")
   const [query, setQuery] = useState("")
+  const [canWriteNotice, setCanWriteNotice] = useState(false)
   const generation = useRef(0)
 
   const load = useCallback(async () => {
@@ -27,15 +28,20 @@ export function BoardListScreen({ kind, enabled }: { kind: BoardKind; enabled: b
     setLoading(true)
     setError("")
     try {
-      const postData = await listPosts()
+      // Notice writing is guidance only; the backend still enforces category permissions.
+      const [postData, eligible] = await Promise.all([
+        listPosts(),
+        kind === "notice" ? getEligibleNoticeCategories().catch(() => []) : Promise.resolve([]),
+      ])
       if (run !== generation.current) return
       setPosts(postData)
+      setCanWriteNotice(eligible.length > 0)
     } catch (caught) {
       if (run === generation.current) setError(caught instanceof Error ? caught.message : "게시글을 불러오지 못했습니다.")
     } finally {
       if (run === generation.current) setLoading(false)
     }
-  }, [enabled])
+  }, [enabled, kind])
 
   useEffect(() => {
     const counter = generation
@@ -52,7 +58,7 @@ export function BoardListScreen({ kind, enabled }: { kind: BoardKind; enabled: b
   )
 
   const actions = <div className={styles.row}>
-    <a className={styles.titleLink} href={writeHref}>게시글 작성</a>
+    {(kind === "general" || canWriteNotice) && <a className={styles.titleLink} href={writeHref}>게시글 작성</a>}
     <Button variant="ghost" size="small" disabled={loading || !enabled} onClick={() => void load()}>새로고침</Button>
   </div>
 

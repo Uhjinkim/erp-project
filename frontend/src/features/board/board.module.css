@@ -7,6 +7,6 @@
 .muted { color: var(--color-muted); font-size: var(--font-small); }
 .body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .comment { display: grid; gap: var(--space-2); border-top: 1px solid var(--color-border); padding: var(--space-3) 0; overflow-wrap: anywhere; }
-.reply { margin-left: var(--space-5); border-left: 2px solid var(--color-border); padding-left: var(--space-3); }
+.reply { margin-left: var(--space-5); }
 .commentText { margin: 0; white-space: pre-wrap; }
 @media (max-width: 720px) { .filters { grid-template-columns: 1fr; } .reply { margin-left: var(--space-3); } }
