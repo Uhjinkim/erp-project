@@ -12,7 +12,6 @@ from workforce.domain.personal_info import (
     ProcessorAssignment,
     resolve_change_request_processor,
     validate_change_request_values,
-    validate_self_editable_fields,
 )
 
 
@@ -32,7 +31,7 @@ class Actor:
 
 
 class PersonalInfoService:
-    """HR-002/HR-003 개인정보 직접 수정과 승인형 변경 요청 유스케이스."""
+    """HR-002/HR-003 개인정보 수정 요청과 인사관리자 승인 유스케이스."""
 
     def __init__(
         self,
@@ -45,18 +44,12 @@ class PersonalInfoService:
         self.clock = clock
         self._processor_cache: dict[int, ProcessorAssignment] = {}
 
-    def update_own_contact(self, employee_no: int, changes: dict[str, str | None]) -> None:
-        """FN-HR-002: 재직 사원이 본인 연락처·주소를 직접 수정한다."""
-        validate_self_editable_fields(set(changes))
-        self._ensure_active(employee_no)
-        self.repository.update_contact(employee_no, changes)
-
     def submit_change_request(
         self,
         employee_no: int,
         requested: ApprovalRequiredValues,
     ) -> PersonalInfoChangeRequest:
-        """FN-HR-003: 사내 이메일·급여계좌 변경을 대기 상태로 기록한다(실제 값은 미변경)."""
+        """FN-HR-002/003: 내 정보 수정 내용을 대기 상태로 기록한다(실제 값은 승인 전까지 미변경)."""
         self._ensure_active(employee_no)
         with self.repository.transaction():
             # 동시 요청으로 대기 요청이 2건 생기지 않도록 사원 행을 잠근 뒤 검사한다.
@@ -68,7 +61,7 @@ class PersonalInfoService:
             self._ensure_email_available(requested.email, employee_no)
             if self.repository.has_pending_request(employee_no):
                 raise WorkforceRuleViolation(
-                    "처리 대기 중인 변경 요청이 있습니다. 기존 요청을 취소한 뒤 다시 요청하세요."
+                    "처리 대기 중인 수정 요청이 있습니다. 기존 요청을 취소한 뒤 다시 요청하세요."
                 )
             return self.repository.add_request(
                 PersonalInfoChangeRequest(
@@ -114,7 +107,7 @@ class PersonalInfoService:
         with self.repository.transaction():
             request = self.repository.get_request(request_id, for_update=True)
             if request is None or not self._can_view(request, actor):
-                raise RequestNotFound("변경 요청을 찾을 수 없습니다.")
+                raise RequestNotFound("수정 요청을 찾을 수 없습니다.")
             request.cancel(actor.employee_no, self.clock())
             self.repository.save_request(request)
             return request
@@ -126,7 +119,7 @@ class PersonalInfoService:
         """FN-HR-005: 요청자, 인사관리자, 현재 처리자만 결과·이력을 조회한다."""
         request = self.repository.get_request(request_id)
         if request is None or not self._can_view(request, actor):
-            raise RequestNotFound("변경 요청을 찾을 수 없습니다.")
+            raise RequestNotFound("수정 요청을 찾을 수 없습니다.")
         return request
 
     def list_requests(
@@ -186,9 +179,9 @@ class PersonalInfoService:
     def _get_for_processing(self, request_id: int, actor: Actor) -> PersonalInfoChangeRequest:
         request = self.repository.get_request(request_id, for_update=True)
         if request is None or not self._can_view(request, actor):
-            raise RequestNotFound("변경 요청을 찾을 수 없습니다.")
+            raise RequestNotFound("수정 요청을 찾을 수 없습니다.")
         if not self._allows(request, actor):
-            raise ProcessingNotAllowed("이 변경 요청을 처리할 권한이 없습니다.")
+            raise ProcessingNotAllowed("이 수정 요청을 처리할 권한이 없습니다.")
         return request
 
     def _ensure_active(self, employee_no: int) -> None:

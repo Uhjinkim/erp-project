@@ -116,10 +116,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value: str | None) -> str | None:
         value = value.strip().lower() if value else value
-        # HR-003: 등록 이후 사내 이메일은 변경 요청·승인 절차로만 바꾼다.
+        # HR-002/HR-003: 등록 이후 사내 이메일은 수정 요청·승인 절차로만 바꾼다.
         if self.instance is not None and value != self.instance.email:
             raise serializers.ValidationError(
-                "사내 이메일은 개인정보 변경 요청과 승인 절차로만 변경할 수 있습니다."
+                "사내 이메일은 개인정보 수정 요청과 승인 절차로만 변경할 수 있습니다."
             )
         return value
 
@@ -182,26 +182,18 @@ class EmployeeRoleSerializer(serializers.ModelSerializer):
         read_only_fields = ["employee_role_id", "assigned_at", "revoked_at"]
 
 
-class OwnContactUpdateSerializer(serializers.Serializer):
-    """FN-HR-002 요청 형식. 허용 항목 판단은 도메인 정책(HR-002)이 담당한다."""
+class ChangeRequestCreateSerializer(serializers.Serializer):
+    """FN-HR-003 요청 형식. 생략하거나 null인 항목은 수정하지 않는다.
+
+    연락처·주소를 빈 문자열로 보내면 미등록으로 지우는 요청이다.
+    """
 
     phone = serializers.CharField(
-        max_length=20, required=False, allow_null=True, allow_blank=True
+        max_length=20, required=False, allow_null=True, allow_blank=True, trim_whitespace=True
     )
     address = serializers.CharField(
-        max_length=255, required=False, allow_null=True, allow_blank=True
+        max_length=255, required=False, allow_null=True, allow_blank=True, trim_whitespace=True
     )
-
-    def validate_phone(self, value: str | None) -> str | None:
-        return value.strip() or None if value else None
-
-    def validate_address(self, value: str | None) -> str | None:
-        return value.strip() or None if value else None
-
-
-class ChangeRequestCreateSerializer(serializers.Serializer):
-    """FN-HR-003 요청 형식. 생략하거나 null인 항목은 변경하지 않는다."""
-
     email = serializers.EmailField(max_length=100, required=False, allow_null=True)
     bank_code = serializers.CharField(max_length=20, required=False, allow_null=True)
     account_no = serializers.CharField(max_length=100, required=False, allow_null=True)
@@ -221,6 +213,8 @@ class ChangeRequestRejectSerializer(serializers.Serializer):
 
 
 class ApprovalRequiredValuesSerializer(serializers.Serializer):
+    phone = serializers.CharField(allow_null=True, allow_blank=True)
+    address = serializers.CharField(allow_null=True, allow_blank=True)
     email = serializers.CharField(allow_null=True)
     bank_code = serializers.CharField(allow_null=True)
     account_no = serializers.CharField(allow_null=True)

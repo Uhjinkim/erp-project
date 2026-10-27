@@ -197,7 +197,7 @@ class EmployeeRole(models.Model):
 
 
 class PersonalInfoChangeRequest(models.Model):
-    """HR-003/HR-011: 사내 이메일·급여계좌 승인형 변경 요청과 처리 이력."""
+    """HR-002/HR-003/HR-011: 개인정보 수정 요청과 처리 이력."""
 
     class Status(models.TextChoices):
         PENDING = "대기", "대기"
@@ -212,9 +212,13 @@ class PersonalInfoChangeRequest(models.Model):
         on_delete=models.RESTRICT,
         related_name="personal_info_change_requests",
     )
+    previous_phone = models.CharField(max_length=20, null=True, blank=True)
+    previous_address = models.CharField(max_length=255, null=True, blank=True)
     previous_email = models.CharField(max_length=100, null=True, blank=True)
     previous_bank_code = models.CharField(max_length=20, null=True, blank=True)
     previous_account_no = models.CharField(max_length=100, null=True, blank=True)
+    requested_phone = models.CharField(max_length=20, null=True, blank=True)
+    requested_address = models.CharField(max_length=255, null=True, blank=True)
     requested_email = models.CharField(max_length=100, null=True, blank=True)
     requested_bank_code = models.CharField(max_length=20, null=True, blank=True)
     requested_account_no = models.CharField(max_length=100, null=True, blank=True)

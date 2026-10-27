@@ -7,12 +7,10 @@ import { QueryFallback } from "./components/QueryFallback"
 import { useProfileQuery } from "./hooks"
 import { ChangeHistoryScreen } from "./screens/ChangeHistoryScreen"
 import { ChangeQueueScreen } from "./screens/ChangeQueueScreen"
-import { ChangeRequestScreen } from "./screens/ChangeRequestScreen"
 import { ChangeReviewScreen } from "./screens/ChangeReviewScreen"
-import { ContactEditScreen } from "./screens/ContactEditScreen"
 import { MyProfileScreen } from "./screens/MyProfileScreen"
 
-const selfScreens = ["my-profile", "contact-edit", "change-request", "change-history"]
+const selfScreens = ["my-profile", "change-history"]
 
 type ProfileScreenProps = { route: Route; user: CurrentUser; enabled: boolean }
 
@@ -32,7 +30,7 @@ export function ProfileScreen({ route, user, enabled }: ProfileScreenProps) {
 // 대기 요청이 없을 때(null)와 아직 조회 전을 구분하기 위해 객체로 감싼다.
 const loadPending = async () => ({ request: (await listChangeRequests({ mine: true, status: "대기" }))[0] ?? null })
 
-// 본인 정보와 대기 요청은 화면 이동 사이에 유지하고, 수정·요청·취소 후 다시 조회한다.
+// 본인 정보와 대기 요청은 화면 이동 사이에 유지하고, 수정 요청 제출·취소 후 다시 조회한다.
 function SelfService({ routeKey, screenId, search, enabled }: { routeKey: string; screenId: string; search: URLSearchParams; enabled: boolean }) {
   const loadEmployee = useCallback(() => getMyEmployeeInfo(), [])
   const employee = useProfileQuery(enabled, loadEmployee)
@@ -43,10 +41,5 @@ function SelfService({ routeKey, screenId, search, enabled }: { routeKey: string
   if (!employee.data) return <QueryFallback query={employee} label="본인 정보를 불러오는 중" notFoundTitle="연결된 사원 정보가 없습니다" />
   // 대기 요청 조회가 실패해도 본인 정보는 표시한다. 요청 제한은 서버가 다시 확인한다.
   const pendingRequest = pending.data?.request ?? null
-  if (screenId === "contact-edit") return <ContactEditScreen key={routeKey} employee={employee.data} onSaved={employee.replace} />
-  if (screenId === "change-request") {
-    if (pending.data === null && !pending.error) return <QueryFallback query={pending} label="요청 상태를 확인하는 중" />
-    return <ChangeRequestScreen key={routeKey} employee={employee.data} pending={pendingRequest} onSubmitted={() => void pending.reload()} />
-  }
-  return <MyProfileScreen key={routeKey} employee={employee.data} pending={pendingRequest} search={search} />
+  return <MyProfileScreen key={routeKey} employee={employee.data} pending={pendingRequest} search={search} onSubmitted={() => void pending.reload()} />
 }

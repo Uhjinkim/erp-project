@@ -17,7 +17,6 @@ from workforce.domain.personal_info import (
     mask_account_no,
     resolve_change_request_processor,
     validate_change_request_values,
-    validate_self_editable_fields,
 )
 from workforce.domain.policies import EmployeeCandidate
 from workforce.infrastructure.models import Department, Employee, EmployeeRole, Person, Role
@@ -26,7 +25,13 @@ from workforce.infrastructure.models import (
 )
 
 NOW = datetime(2026, 10, 6, 9, 0)
-CURRENT = ApprovalRequiredValues(email="a@example.com", bank_code="004", account_no="111")
+CURRENT = ApprovalRequiredValues(
+    phone="010-0000-0000",
+    address=None,
+    email="a@example.com",
+    bank_code="004",
+    account_no="111",
+)
 
 
 def pending_request(employee_no: int = 1001) -> PersonalInfoChangeRequest:
@@ -43,11 +48,16 @@ def pending_request(employee_no: int = 1001) -> PersonalInfoChangeRequest:
 # --- domain ---------------------------------------------------------------------------------
 
 
-def test_hr_002_employee_may_edit_only_contact_and_address() -> None:
-    validate_self_editable_fields({"phone", "address"})
-    for forbidden in ("email", "account_no", "bank_code", "tenure_status", "dept_no"):
-        with pytest.raises(WorkforceRuleViolation):
-            validate_self_editable_fields({"phone", forbidden})
+def test_hr_002_contact_and_address_are_requested_and_may_be_cleared() -> None:
+    validate_change_request_values(
+        current=CURRENT, requested=ApprovalRequiredValues(phone="", address="새 주소")
+    )
+    assert ApprovalRequiredValues(phone="", address="새 주소").changes() == {
+        "phone": None,
+        "address": "새 주소",
+    }
+    with pytest.raises(WorkforceRuleViolation):
+        validate_change_request_values(current=CURRENT, requested=ApprovalRequiredValues(email=""))
 
 
 def test_fn_hr_003_account_requires_bank_code_and_number_together() -> None:
@@ -63,6 +73,11 @@ def test_fn_hr_003_rejects_empty_or_unchanged_request() -> None:
     with pytest.raises(WorkforceRuleViolation):
         validate_change_request_values(
             current=CURRENT, requested=ApprovalRequiredValues(email="a@example.com")
+        )
+    # 이미 미등록인 주소를 지우는 요청도 변경 없음이다.
+    with pytest.raises(WorkforceRuleViolation):
+        validate_change_request_values(
+            current=CURRENT, requested=ApprovalRequiredValues(address="")
         )
 
 
@@ -135,35 +150,46 @@ def manager() -> User:
 
 
 @pytest.mark.django_db
-def test_fn_hr_002_employee_updates_own_contact_and_address(staff: User) -> None:
-    response = client_for(staff).patch(
-        "/api/workforce/employees/me/",
-        {"phone": " 010-1234-5678 ", "address": "새 주소"},
+def test_fn_hr_002_contact_change_is_applied_only_after_hr_approval(
+    staff: User, manager: User
+) -> None:
+    created = client_for(staff).post(
+        "/api/workforce/personal-info-requests/",
+        {"phone": " 010-1234-5678 ", "address": ""},
         format="json",
     )
-
-    assert response.status_code == 200
-    assert response.json()["phone"] == "010-1234-5678"
+    assert created.status_code == 201
+    body = created.json()
+    assert body["changed_fields"] == ["phone", "address"]
+    assert body["previous"]["phone"] == "010-0000-0000"
+    assert body["requested"]["phone"] == "010-1234-5678"
     staff.employee.refresh_from_db()
-    assert (staff.employee.phone, staff.employee.address) == ("010-1234-5678", "새 주소")
+    assert (staff.employee.phone, staff.employee.address) == ("010-0000-0000", "기존 주소")
+
+    approved = client_for(manager).post(
+        f"/api/workforce/personal-info-requests/{body['request_id']}/approve/"
+    )
+    assert approved.status_code == 200
+    staff.employee.refresh_from_db()
+    assert (staff.employee.phone, staff.employee.address) == ("010-1234-5678", None)
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "payload",
     [
+        {"phone": "010-9999-9999", "address": "새 주소"},
         {"email": "new@example.com"},
         {"account_no": "999"},
         {"tenure_status": "퇴사"},
-        {"phone": "010-9999-9999", "dept_no": 10},
     ],
 )
-def test_hr_002_employee_cannot_directly_edit_other_fields(
+def test_hr_002_employee_cannot_directly_edit_own_info(
     staff: User, payload: dict[str, object]
 ) -> None:
     response = client_for(staff).patch("/api/workforce/employees/me/", payload, format="json")
 
-    assert response.status_code == 400
+    assert response.status_code == 405
     staff.employee.refresh_from_db()
     assert staff.employee.phone == "010-0000-0000"
     assert staff.employee.email == "user1001@example.com"
@@ -203,6 +229,8 @@ def test_fn_hr_003_to_004_request_is_applied_only_after_approval(
     body = created.json()
     assert body["status"] == "대기"
     assert body["previous"] == {
+        "phone": "010-0000-0000",
+        "address": "기존 주소",
         "email": "user1001@example.com",
         "bank_code": "004",
         "account_no": "**1111",

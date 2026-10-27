@@ -33,10 +33,10 @@ const entry = (history_id: number, start_date: string, end_date: string | null =
 })
 
 describe("workforce display rules", () => {
-  test("HR screen gate follows HR_MANAGER or superuser only (server still enforces HR-001)", () => {
+  test("HR screen gate follows the HR_MANAGER role only (server still enforces HR-001)", () => {
     expect(model.isHRManager(user(["HR_MANAGER"]))).toBe(true)
     expect(model.isHRManager(user(["PAYROLL_MANAGER", "HR_MANAGER"]))).toBe(true)
-    expect(model.isHRManager(user([], true))).toBe(true)
+    expect(model.isHRManager(user([], true))).toBe(false)
     expect(model.isHRManager(user(["PAYROLL_MANAGER", "HR_LEAVE_APPROVER"]))).toBe(false)
   })
 

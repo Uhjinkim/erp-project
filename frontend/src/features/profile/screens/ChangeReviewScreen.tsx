@@ -43,7 +43,7 @@ function ReviewForm({ request, onStale }: { request: PersonalInfoChangeRequest; 
 
   return (
     <div className={styles.stack}>
-      <Card title={`변경 요청 #${request.request_id}`} actions={<a href={profileHref("change-queue")}>처리함</a>}>
+      <Card title={`수정 요청 #${request.request_id}`} actions={<a href={profileHref("change-queue")}>처리함</a>}>
         <DetailList items={[
           { key: "emp", label: "요청자 사번", value: request.emp_no },
           { key: "status", label: "상태", value: <Badge tone={statusTone(request.status)}>{request.status}</Badge> },
@@ -68,7 +68,7 @@ function ReviewForm({ request, onStale }: { request: PersonalInfoChangeRequest; 
             </div>
           </Card>
         : <Alert tone="info">{request.status === "대기" ? "이 요청을 처리할 권한이 없습니다." : "이미 처리가 끝난 요청입니다."}</Alert>}
-      <ConfirmDialog open={action !== null} danger={action === "reject"} title={action === "approve" ? "변경 요청 승인" : "변경 요청 반려"}
+      <ConfirmDialog open={action !== null} danger={action === "reject"} title={action === "approve" ? "개인정보 변경 승인" : "개인정보 변경 반려"}
         confirmLabel={action === "approve" ? "승인" : "반려"} busy={mutation.pending} onClose={() => setAction(null)} onConfirm={() => void confirm()}>
         <p>{action === "approve" ? `사번 ${request.emp_no}의 요청 값을 인사정보에 반영합니다.` : `사번 ${request.emp_no}의 요청을 반려합니다. 기존 값은 유지됩니다.`}</p>
         {action === "reject" && <p className={styles.hint}>반려 사유: {reason.trim() || "입력하지 않음"}</p>}

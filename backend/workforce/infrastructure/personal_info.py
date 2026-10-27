@@ -29,6 +29,8 @@ class DjangoPersonalInfoRepository:
         if employee is None:
             return None
         return ApprovalRequiredValues(
+            phone=employee.phone,
+            address=employee.address,
             email=employee.email,
             bank_code=employee.bank_code,
             account_no=employee.account_no,
@@ -54,11 +56,8 @@ class DjangoPersonalInfoRepository:
             status=ChangeRequestStatus.PENDING,
         ).exists()
 
-    def update_contact(self, employee_no: int, changes: dict[str, str | None]) -> None:
-        Employee.objects.filter(employee_no=employee_no).update(**changes)
-
     def apply_values(self, employee_no: int, values: ApprovalRequiredValues) -> None:
-        changes = {name: getattr(values, name) for name in values.changed_fields()}
+        changes = values.changes()
         employee = Employee.objects.select_for_update().get(employee_no=employee_no)
         for name, value in changes.items():
             setattr(employee, name, value)
@@ -105,9 +104,13 @@ class DjangoPersonalInfoRepository:
         request: PersonalInfoChangeRequest,
         model: PersonalInfoChangeRequestModel,
     ) -> None:
+        model.previous_phone = request.previous.phone
+        model.previous_address = request.previous.address
         model.previous_email = request.previous.email
         model.previous_bank_code = request.previous.bank_code
         model.previous_account_no = request.previous.account_no
+        model.requested_phone = request.requested.phone
+        model.requested_address = request.requested.address
         model.requested_email = request.requested.email
         model.requested_bank_code = request.requested.bank_code
         model.requested_account_no = request.requested.account_no
@@ -123,11 +126,15 @@ class DjangoPersonalInfoRepository:
             request_id=model.request_id,
             employee_no=model.employee_id,
             previous=ApprovalRequiredValues(
+                phone=model.previous_phone,
+                address=model.previous_address,
                 email=model.previous_email,
                 bank_code=model.previous_bank_code,
                 account_no=model.previous_account_no,
             ),
             requested=ApprovalRequiredValues(
+                phone=model.requested_phone,
+                address=model.requested_address,
                 email=model.requested_email,
                 bank_code=model.requested_bank_code,
                 account_no=model.requested_account_no,

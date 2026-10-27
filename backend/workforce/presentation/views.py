@@ -75,7 +75,6 @@ from workforce.presentation.serializers import (
     HistoryCorrectionSerializer,
     HistoryEntrySerializer,
     NewHireRegistrationSerializer,
-    OwnContactUpdateSerializer,
     PersonSerializer,
     PositionSerializer,
     RegisteredNewHireSerializer,
@@ -141,28 +140,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(tenure_status=status_value)
         return queryset.order_by("employee_no")
 
-    @action(detail=False, methods=["get", "patch"], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def me(self, request: Request) -> Response:
-        """FN-HR-001 본인 인사 정보 조회, FN-HR-002 연락처·주소 직접 수정."""
+        """FN-HR-001 본인 인사 정보 조회. 본인 수정은 수정 요청(HR-002)으로만 한다."""
         employee_no = request_employee_no(request)
         if employee_no is None:
             return Response(
                 {"detail": "계정에 연결된 사원 정보가 없습니다."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        if request.method == "PATCH":
-            serializer = OwnContactUpdateSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            # 허용되지 않은 항목도 넘겨 HR-002 도메인 정책이 거절 사유를 결정하게 한다.
-            unknown = {
-                key: request.data[key] for key in request.data if key not in serializer.fields
-            }
-            try:
-                personal_info_service().update_own_contact(
-                    employee_no, {**serializer.validated_data, **unknown}
-                )
-            except WorkforceRuleViolation as exc:
-                return rule_violation_response(exc)
         employee = self.get_queryset().filter(employee_no=employee_no).first()
         if employee is None:
             return Response(
@@ -398,7 +384,7 @@ def rule_violation_response(exc: WorkforceRuleViolation) -> Response:
 
 
 class PersonalInfoChangeRequestViewSet(viewsets.ViewSet):
-    """HR-003: 사내 이메일·급여계좌 변경 요청(FN-HR-003~005, FN-HR-011).
+    """HR-002/HR-003: 개인정보 수정 요청(FN-HR-003~005, FN-HR-011).
 
     승인·반려 처리자는 승인 시점의 조직 정보로 애플리케이션 계층이 판정한다.
     """

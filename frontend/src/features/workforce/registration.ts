@@ -5,6 +5,7 @@ export const registration: ModuleRegistration = {
   "label": "사원·조직",
   "icon": "♧",
   "entry": "employee-list",
+  "requiredRole": "HR_MANAGER",
   "screens": [
     {
       "id": "employee-list",

@@ -25,24 +25,29 @@ describe("profile display rules", () => {
   })
 })
 
-describe("self-service forms", () => {
-  test("contact edit sends trimmed values and nulls for blanks (HR-002)", () => {
-    expect(model.toContactPayload({ phone: " 010 ", address: "  " })).toEqual({ phone: "010", address: null })
-    expect(model.contactChanged({ phone: "010", address: "" }, { phone: "010", address: null })).toBe(false)
-    expect(model.contactChanged({ phone: "011", address: "" }, { phone: "010", address: null })).toBe(true)
+describe("my-profile edit mode", () => {
+  const current = { phone: "010", address: null, email: "a@example.test", bank_code: "004", account_no: "111-111" }
+
+  test("edit form starts from current values without the raw account number", () => {
+    expect(model.toEditForm(current)).toEqual({ phone: "010", address: "", email: "a@example.test", bank_code: "004", account_no: "" })
   })
 
-  test("change requests need a value and bank code with account number together (FN-HR-003)", () => {
-    const empty = { email: "", bank_code: "", account_no: "" }
-    expect(model.validateChangeRequest(empty).form).toBeDefined()
-    expect(model.validateChangeRequest({ ...empty, account_no: "123" }).bank_code).toBeDefined()
-    expect(model.validateChangeRequest({ ...empty, bank_code: "004" }).account_no).toBeDefined()
-    expect(model.validateChangeRequest({ ...empty, email: "invalid" }).email).toBeDefined()
-    expect(model.validateChangeRequest({ ...empty, email: "new@example.test" })).toEqual({})
+  test("only changed fields become the edit request and cleared contact fields are sent as empty (HR-002)", () => {
+    const form = model.toEditForm(current)
+    expect(model.toEditPayload(form, current)).toEqual({})
+    expect(model.toEditPayload({ ...form, phone: " 011 ", address: " 새 주소 " }, current)).toEqual({ phone: "011", address: "새 주소" })
+    expect(model.toEditPayload({ ...form, phone: "  " }, current)).toEqual({ phone: "" })
+    expect(model.toEditPayload({ ...form, email: " New@Example.test " }, current)).toEqual({ email: "new@example.test" })
+    expect(model.toEditPayload({ ...form, account_no: " 222 " }, current)).toEqual({ bank_code: "004", account_no: "222" })
   })
 
-  test("only entered fields are requested so the rest stay unchanged", () => {
-    expect(model.toChangeRequestPayload({ email: " New@Example.test ", bank_code: "", account_no: "" })).toEqual({ email: "new@example.test" })
-    expect(model.toChangeRequestPayload({ email: "", bank_code: "004", account_no: " 123 " })).toEqual({ bank_code: "004", account_no: "123" })
+  test("edit validation needs a change, a valid email, and bank code with account number together", () => {
+    const form = model.toEditForm(current)
+    expect(model.validateEdit(form, current).form).toBeDefined()
+    expect(model.validateEdit({ ...form, email: "" }, current).email).toBeDefined()
+    expect(model.validateEdit({ ...form, email: "invalid" }, current).email).toBeDefined()
+    expect(model.validateEdit({ ...form, bank_code: "088" }, current).account_no).toBeDefined()
+    expect(model.validateEdit({ ...form, bank_code: "", account_no: "222" }, current).bank_code).toBeDefined()
+    expect(model.validateEdit({ ...form, phone: "011" }, current)).toEqual({})
   })
 })

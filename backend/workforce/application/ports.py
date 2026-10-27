@@ -45,7 +45,7 @@ class RoleCommandGateway(Protocol):
 
 
 class PersonalInfoRepository(Protocol):
-    """HR-002/HR-003 개인정보 수정·변경 요청 저장소 포트."""
+    """HR-002/HR-003 개인정보 수정 요청 저장소 포트."""
 
     def transaction(self) -> AbstractContextManager[None]: ...
 
@@ -58,8 +58,6 @@ class PersonalInfoRepository(Protocol):
     def email_in_use(self, email: str, *, exclude_employee_no: int) -> bool: ...
 
     def has_pending_request(self, employee_no: int) -> bool: ...
-
-    def update_contact(self, employee_no: int, changes: dict[str, str | None]) -> None: ...
 
     def apply_values(self, employee_no: int, values: ApprovalRequiredValues) -> None: ...
 

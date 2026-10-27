@@ -5,12 +5,12 @@ from enum import StrEnum
 from workforce.domain.exceptions import WorkforceRuleViolation
 from workforce.domain.policies import EmployeeCandidate
 
-# HR-002 / FN-HR-002: 사원이 승인 없이 직접 수정하는 연락처·주소 항목.
-SELF_EDITABLE_FIELDS = frozenset({"phone", "address"})
+# HR-002: 수정 요청에서 빈 값으로 지울 수 있는(미등록으로 되돌릴 수 있는) 항목.
+CLEARABLE_FIELDS = frozenset({"phone", "address"})
 
 
 class ChangeRequestStatus(StrEnum):
-    """HR-011: 개인정보 변경 요청 상태."""
+    """HR-011: 개인정보 수정 요청 상태."""
 
     PENDING = "대기"
     APPROVED = "승인"
@@ -20,17 +20,24 @@ class ChangeRequestStatus(StrEnum):
 
 @dataclass(frozen=True)
 class ApprovalRequiredValues:
-    """HR-003: 변경 요청과 인사관리자 승인을 거쳐야 하는 사내 이메일·급여계좌.
+    """HR-002/HR-003: 수정 요청과 인사관리자 승인을 거쳐야 반영되는 개인정보.
 
-    변경 요청에서 ``None``은 '변경하지 않음'을 뜻한다.
+    수정 요청에서 ``None``은 '수정하지 않음'을, 연락처·주소의 빈 문자열은
+    '미등록으로 지움'을 뜻한다.
     """
 
+    phone: str | None = None
+    address: str | None = None
     email: str | None = None
     bank_code: str | None = None
     account_no: str | None = None
 
     def changed_fields(self) -> list[str]:
         return [item.name for item in fields(self) if getattr(self, item.name) is not None]
+
+    def changes(self) -> dict[str, str | None]:
+        """실제 인사정보에 반영할 값. 지움 표시(빈 문자열)는 미등록(``None``)으로 바꾼다."""
+        return {name: getattr(self, name) or None for name in self.changed_fields()}
 
     def masked(self) -> "ApprovalRequiredValues":
         """계좌번호를 뒤 4자리만 남기고 가린 사본."""
@@ -50,40 +57,31 @@ def mask_account_no(value: str | None) -> str | None:
     return "*" * (len(characters) - 4) + "".join(characters[-4:])
 
 
-def validate_self_editable_fields(field_names: set[str]) -> None:
-    """HR-002: 일반 사원은 연락처·주소만 직접 수정한다."""
-    if not field_names:
-        raise WorkforceRuleViolation("수정할 항목이 없습니다.")
-    forbidden = sorted(field_names - SELF_EDITABLE_FIELDS)
-    if forbidden:
-        raise WorkforceRuleViolation(
-            "연락처·주소만 직접 수정할 수 있습니다. 사내 이메일·급여계좌는 변경 요청을, "
-            "그 밖의 인사정보는 인사관리자에게 요청하세요.",
-            field=forbidden[0],
-        )
-
-
 def validate_change_request_values(
     *,
     current: ApprovalRequiredValues,
     requested: ApprovalRequiredValues,
 ) -> None:
-    """FN-HR-003: 승인형 변경 요청 값 검증(형식·중복 검증은 transport/application 담당)."""
+    """FN-HR-003: 수정 요청 값 검증(형식·중복 검증은 transport/application 담당)."""
     changed = requested.changed_fields()
     if not changed:
-        raise WorkforceRuleViolation("변경할 사내 이메일 또는 급여계좌를 입력하세요.")
+        raise WorkforceRuleViolation("수정할 항목을 입력하세요.")
+    for name in changed:
+        if getattr(requested, name) == "" and name not in CLEARABLE_FIELDS:
+            raise WorkforceRuleViolation("이 항목은 비워 둘 수 없습니다.", field=name)
     if (requested.bank_code is None) != (requested.account_no is None):
         raise WorkforceRuleViolation(
             "급여계좌는 은행 코드와 계좌번호를 함께 입력해야 합니다.",
             field="account_no" if requested.account_no is None else "bank_code",
         )
-    if all(getattr(requested, name) == getattr(current, name) for name in changed):
+    # 지움 표시와 미등록은 같은 값으로 본다.
+    if all((getattr(requested, name) or None) == getattr(current, name) for name in changed):
         raise WorkforceRuleViolation("현재 값과 다른 값을 입력하세요.")
 
 
 @dataclass(frozen=True)
 class ProcessorAssignment:
-    """변경 요청 처리자. 요청 시점이 아니라 승인·반려 시점의 조직 정보로 결정한다.
+    """수정 요청 처리자. 요청 시점이 아니라 승인·반려 시점의 조직 정보로 결정한다.
 
     - ``any_hr_manager``: 인사관리자 누구나 처리한다.
     - ``employee_no``: 지정된 사원만 처리한다.
@@ -133,7 +131,7 @@ def resolve_change_request_processor(
 
 @dataclass
 class PersonalInfoChangeRequest:
-    """FN-HR-003~005, FN-HR-011: 승인형 개인정보 변경 요청."""
+    """FN-HR-003~005, FN-HR-011: 개인정보 수정 요청."""
 
     request_id: int | None
     employee_no: int
@@ -173,7 +171,7 @@ class PersonalInfoChangeRequest:
     def cancel(self, actor_employee_no: int | None, processed_at: datetime) -> None:
         """FN-HR-011: 요청자 본인만 대기 요청을 취소한다."""
         if actor_employee_no != self.employee_no:
-            raise WorkforceRuleViolation("본인이 제출한 변경 요청만 취소할 수 있습니다.")
+            raise WorkforceRuleViolation("본인이 제출한 수정 요청만 취소할 수 있습니다.")
         self._require_pending()
         self.status = ChangeRequestStatus.CANCELLED
         self._record_processing(actor_employee_no, processed_at)
