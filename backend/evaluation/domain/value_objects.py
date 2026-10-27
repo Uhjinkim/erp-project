@@ -105,8 +105,9 @@ def add_months(value: date, months: int) -> date:
 def has_minimum_tenure(hire_date: date, basis_date: date) -> bool:
     """3개월 이하 근무자는 평가 대상이 아니다 (사용자 확인, 2026-10-08).
 
-    Tenure is measured up to the evaluation basis date (연말 기준), so someone hired
-    on 30 September has exactly three months on 30 December and is not evaluated.
+    Tenure is measured up to the evaluation basis date (연말 기준): someone hired on
+    1 October reaches three months only on 1 January and is not evaluated for that year,
+    while someone hired on 30 September has more than three months on 31 December.
     """
     return add_months(hire_date, MINIMUM_TENURE_MONTHS) < basis_date
 
