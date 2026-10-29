@@ -10,7 +10,12 @@ from payroll.application.dto import (
     PayrollItemInput,
     UpdateItemsCommand,
 )
-from payroll.application.ports import EmployeeDisplay, HolidayGateway, WorkforceGateway
+from payroll.application.ports import (
+    EmployeeDisplay,
+    HolidayGateway,
+    PayrollTargetEmployee,
+    WorkforceGateway,
+)
 from payroll.application.service import PayrollService
 from payroll.domain.entities import (
     ComponentCategory,
@@ -20,7 +25,9 @@ from payroll.domain.entities import (
 )
 from payroll.domain.exceptions import (
     DuplicatePayrollStatementError,
+    InvalidPayrollTransitionError,
     PayrollComponentNotFoundError,
+    PayrollNotConfirmedError,
     PayrollPermissionError,
 )
 from payroll.domain.repositories import (
@@ -125,6 +132,9 @@ class FakeWorkforce(WorkforceGateway):
             employee_no: EmployeeDisplay(employee_no, f"사원 {employee_no}", None)
             for employee_no in employee_nos
         }
+
+    def list_payroll_targets(self) -> list[PayrollTargetEmployee]:
+        return [PayrollTargetEmployee(1001, "사원 1001", 10, "개발팀", "사원", True)]
 
 
 class FakeHolidays(HolidayGateway):
@@ -240,16 +250,17 @@ def test_history_reasons_use_korean_component_names_and_whole_won_amounts() -> N
         UpdateItemsCommand(
             actor_employee_no=9001,
             statement_id=statement_id,
+            # Submitted deduction-first: the reason still lists earnings first, one per line.
             items=[
-                PayrollItemInput(component_code="BASE_PAY", amount=Decimal("2300000.00")),
                 PayrollItemInput(component_code="NATIONAL_PENSION", amount=Decimal("103500.00")),
+                PayrollItemInput(component_code="BASE_PAY", amount=Decimal("2300000.00")),
             ],
         )
     )
     payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
 
     reasons = [entry.reason for entry in uow.histories.list_for_statement(statement_id)]
-    assert reasons == ["기본급 2,300,000원, 국민연금 103,500원", "차인지급액 2,196,500원 확정"]
+    assert reasons == ["기본급 2,300,000원\n국민연금 103,500원", "차인지급액 2,196,500원 확정"]
 
 
 def test_only_payroll_manager_can_view_history_details() -> None:
@@ -293,3 +304,89 @@ def test_employee_can_view_only_their_own_confirmed_statement() -> None:
         payroll.get(statement_id, 1002)
     assert payroll.get(statement_id, 9001).employee_no == 1001
     assert [item.statement_id for item in payroll.list_mine(1001)] == [statement_id]
+
+
+def test_only_payroll_manager_can_list_payroll_targets() -> None:
+    payroll = service(FakeUnitOfWork())
+
+    assert [target.employee_no for target in payroll.list_payroll_targets(9001)] == [1001]
+    with pytest.raises(PayrollPermissionError):
+        payroll.list_payroll_targets(1001)
+
+
+def test_payment_date_defaults_to_policy_and_can_be_overridden() -> None:
+    uow = FakeUnitOfWork()
+    payroll = service(uow)
+
+    defaulted = payroll.create_statement(
+        CreateStatementCommand(actor_employee_no=9001, employee_no=1001, year=2026, month=10)
+    )
+    assert defaulted.payment_date == date(2026, 10, 23)
+
+    overridden = payroll.create_statement(
+        CreateStatementCommand(
+            actor_employee_no=9001,
+            employee_no=1001,
+            year=2026,
+            month=11,
+            payment_date=date(2026, 11, 20),
+        )
+    )
+    assert overridden.payment_date == date(2026, 11, 20)
+
+
+def test_payment_date_change_on_draft_is_recorded_and_blocked_once_confirmed() -> None:
+    uow = FakeUnitOfWork()
+    payroll = service(uow)
+    created = payroll.create_statement(
+        CreateStatementCommand(actor_employee_no=9001, employee_no=1001, year=2026, month=9)
+    )
+    statement_id = created.statement_id or 0
+    items = [PayrollItemInput(component_code="BASE_PAY", amount=Decimal("3000000"))]
+
+    updated = payroll.update_items(
+        UpdateItemsCommand(
+            actor_employee_no=9001,
+            statement_id=statement_id,
+            items=items,
+            payment_date=date(2026, 9, 24),
+        )
+    )
+    assert updated.payment_date == date(2026, 9, 24)
+    assert uow.histories.list_for_statement(statement_id)[-1].reason == (
+        "지급일 2026-09-25 → 2026-09-24\n기본급 3,000,000원"
+    )
+
+    payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
+    with pytest.raises(InvalidPayrollTransitionError):
+        payroll.update_items(
+            UpdateItemsCommand(
+                actor_employee_no=9001,
+                statement_id=statement_id,
+                items=items,
+                payment_date=date(2026, 9, 23),
+            )
+        )
+
+
+def test_only_confirmed_statement_can_be_exported() -> None:
+    uow = FakeUnitOfWork()
+    payroll = service(uow)
+    created = payroll.create_statement(
+        CreateStatementCommand(
+            actor_employee_no=9001,
+            employee_no=1001,
+            year=2026,
+            month=9,
+            items=[PayrollItemInput(component_code="BASE_PAY", amount=Decimal("3000000"))],
+        )
+    )
+    statement_id = created.statement_id or 0
+
+    with pytest.raises(PayrollNotConfirmedError):
+        payroll.get_for_export(statement_id, 9001)
+
+    payroll.confirm(ConfirmCommand(actor_employee_no=9001, statement_id=statement_id))
+    assert payroll.get_for_export(statement_id, 1001).statement_id == statement_id
+    with pytest.raises(PayrollPermissionError):
+        payroll.get_for_export(statement_id, 1002)

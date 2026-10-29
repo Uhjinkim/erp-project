@@ -142,3 +142,12 @@ def test_reply_to_a_reply_is_rejected() -> None:
     reply = make_comment(comment_id=2, parent_comment_id=1)
     with pytest.raises(NestedReplyNotAllowedError):
         ensure_reply_depth_allowed(reply)
+
+
+def test_moderator_can_soft_delete_others_post_and_comment() -> None:
+    post = make_post()
+    post.soft_delete(9999, False, NOW, actor_is_moderator=True)
+    assert post.deleted_at == NOW
+    comment = make_comment()
+    comment.soft_delete(9999, False, NOW, actor_is_moderator=True)
+    assert comment.deleted_at == NOW

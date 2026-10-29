@@ -1,0 +1,25 @@
+# Host nginx: substitute ERP_PUBLIC_IP. The app is reachable only over loopback.
+server {
+    listen 80 default_server;
+    server_name _;
+    access_log off;
+    location ^~ /.well-known/acme-challenge/ { root /var/lib/letsencrypt; }
+    location / { return 301 https://${ERP_PUBLIC_IP}$request_uri; }
+}
+server {
+    listen 443 ssl default_server;
+    server_name ${ERP_PUBLIC_IP};
+    ssl_certificate /etc/letsencrypt/live/${ERP_PUBLIC_IP}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ERP_PUBLIC_IP}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    access_log off;
+    client_max_body_size 2m;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host ${ERP_PUBLIC_IP};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 65s;
+    }
+}

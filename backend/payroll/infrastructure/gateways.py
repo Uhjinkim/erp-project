@@ -1,6 +1,11 @@
 from datetime import date
 
-from payroll.application.ports import EmployeeDisplay, HolidayGateway, WorkforceGateway
+from payroll.application.ports import (
+    EmployeeDisplay,
+    HolidayGateway,
+    PayrollTargetEmployee,
+    WorkforceGateway,
+)
 from payroll.infrastructure.models import PublicHolidayModel
 from workforce.application.services import employee_has_role
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
@@ -28,6 +33,22 @@ class DjangoWorkforceGateway(WorkforceGateway):
             )
             for employee in employees
         }
+
+    def list_payroll_targets(self) -> list[PayrollTargetEmployee]:
+        employees = Employee.objects.select_related("person", "department", "position").order_by(
+            "employee_no"
+        )
+        return [
+            PayrollTargetEmployee(
+                employee_no=employee.employee_no,
+                name=employee.person.name,
+                dept_no=employee.department_id,
+                dept_name=employee.department.dept_name if employee.department else None,
+                position_name=employee.position.position_name if employee.position else None,
+                is_active=employee.is_active_employee,
+            )
+            for employee in employees
+        ]
 
 
 class DjangoHolidayGateway(HolidayGateway):

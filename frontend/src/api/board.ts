@@ -60,3 +60,10 @@ export async function updateComment(commentId: number, content: string) {
 export async function deleteComment(commentId: number) {
   return requestJson<null>(`/api/board/comments/${commentId}/`, { method: "DELETE" })
 }
+
+export async function getEligibleNoticeCategories() {
+  const result = await requestJson<{ categories: NoticeCategory[] }>(
+    "/api/board/notice-categories/eligible/",
+  )
+  return result.categories
+}

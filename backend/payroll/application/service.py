@@ -9,8 +9,14 @@ from payroll.application.dto import (
     PayrollItemInput,
     UpdateItemsCommand,
 )
-from payroll.application.ports import EmployeeDisplay, HolidayGateway, WorkforceGateway
+from payroll.application.ports import (
+    EmployeeDisplay,
+    HolidayGateway,
+    PayrollTargetEmployee,
+    WorkforceGateway,
+)
 from payroll.domain.entities import (
+    ComponentCategory,
     PayrollAction,
     PayrollComponentType,
     PayrollHistory,
@@ -22,9 +28,10 @@ from payroll.domain.exceptions import (
     DuplicatePayrollStatementError,
     InactiveEmployeeError,
     PayrollComponentNotFoundError,
+    PayrollNotConfirmedError,
     PayrollPermissionError,
 )
-from payroll.domain.policies import resolve_payment_date
+from payroll.domain.policies import payslip_rank, resolve_payment_date
 from payroll.domain.repositories import PayrollUnitOfWork
 from payroll.domain.value_objects import PayPeriod
 
@@ -57,7 +64,7 @@ class PayrollService:
                 raise DuplicatePayrollStatementError(
                     "해당 사원의 해당 정산월 급여가 이미 존재합니다."
                 )
-            payment_date = resolve_payment_date(
+            payment_date = command.payment_date or resolve_payment_date(
                 period, self.holidays.holidays_in(period.year, period.month)
             )
             items = [item for _, item in self._resolve_items(uow, command.items)]
@@ -81,14 +88,20 @@ class PayrollService:
             statement = uow.statements.get(command.statement_id, for_update=True)
             self._require_not_self(command.actor_employee_no, statement.employee_no)
             resolved = self._resolve_items(uow, command.items)
+            changes = []
+            previous_payment_date = statement.payment_date
+            if command.payment_date and command.payment_date != previous_payment_date:
+                statement.change_payment_date(command.payment_date)
+                changes.append(f"지급일 {previous_payment_date} → {command.payment_date}")
             statement.replace_items([item for _, item in resolved])
             uow.statements.save(statement)
+            changes.append(self._items_summary(resolved))
             self._record(
                 uow,
                 statement,
                 PayrollAction.ITEMS_UPDATED,
                 command.actor_employee_no,
-                reason=self._items_summary(resolved),
+                reason=self._truncate_reason("\n".join(changes)),
             )
             return statement
 
@@ -157,7 +170,21 @@ class PayrollService:
 
     def list_components(self) -> list[PayrollComponentType]:
         with self.unit_of_work_factory() as uow:
-            return uow.components.list_active()
+            return sorted(
+                uow.components.list_active(), key=lambda component: payslip_rank(component.code)
+            )
+
+    def list_payroll_targets(self, requester_employee_no: int) -> list[PayrollTargetEmployee]:
+        # PY-001: only payroll managers pick whom to pay. This exposes no contact details, so
+        # HR-001 (employee list restricted to HR managers) is not widened.
+        self._require_manager(requester_employee_no)
+        return self.workforce.list_payroll_targets()
+
+    def get_for_export(self, statement_id: int, requester_employee_no: int) -> PayrollStatement:
+        statement = self.get(statement_id, requester_employee_no)
+        if statement.status != PayrollStatus.CONFIRMED:
+            raise PayrollNotConfirmedError("확정된 급여명세서만 내려받을 수 있습니다.")
+        return statement
 
     def can_view_history_details(self, requester_employee_no: int) -> bool:
         # Only payroll managers see who changed what and why; employees see action and date only.
@@ -185,11 +212,21 @@ class PayrollService:
         return resolved
 
     def _items_summary(self, resolved: list[tuple[PayrollComponentType, PayrollItem]]) -> str:
-        # `payroll_history.reason` is varchar(255) in the shared database.
-        summary = ", ".join(
-            f"{component.name} {_format_won(item.amount)}" for component, item in resolved
+        # One line per item: earnings before deductions, each group in payslip order.
+        ordered = sorted(
+            resolved,
+            key=lambda pair: (
+                pair[1].category != ComponentCategory.EARNING,
+                payslip_rank(pair[0].code),
+            ),
         )
-        return summary if len(summary) <= 255 else summary[:252] + "..."
+        return "\n".join(
+            f"{component.name} {_format_won(item.amount)}" for component, item in ordered
+        )
+
+    def _truncate_reason(self, reason: str) -> str:
+        # `payroll_history.reason` is varchar(255) in the shared database.
+        return reason if len(reason) <= 255 else reason[:252] + "..."
 
     def _record(
         self,

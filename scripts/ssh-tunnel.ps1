@@ -1,5 +1,6 @@
 param(
-    [string]$EnvFile = (Join-Path (Split-Path -Parent $PSScriptRoot) ".env")
+    [string]$EnvFile = (Join-Path (Split-Path -Parent $PSScriptRoot) ".env"),
+    [switch]$Diagnostic
 )
 
 $ErrorActionPreference = "Stop"
@@ -88,6 +89,12 @@ foreach ($requiredKey in @("SSH_HOST", "SSH_USER")) {
     }
 }
 
+# %h is expanded inside ProxyCommand; reject shell characters and URL schemes.
+if ($config.SSH_HOST -notmatch '^[a-zA-Z0-9_.][a-zA-Z0-9_.-]*$') {
+    Write-Error "SSH_HOST must be a hostname or SSH alias, without a URL scheme or shell characters."
+    exit 1
+}
+
 foreach ($portKey in @(
     "SSH_PORT",
     "DB_TUNNEL_LOCAL_PORT",
@@ -107,13 +114,28 @@ if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+if (-not (Get-Command cloudflared -CommandType Application -ErrorAction SilentlyContinue)) {
+    Write-Error "cloudflared not found. Install it and add it to PATH before opening the SSH tunnel."
+    exit 1
+}
+
 $sshArguments = @(
     "-N",
+    "-o", "ProxyCommand=cloudflared access ssh --hostname %h",
     "-o", "ExitOnForwardFailure=yes",
     "-o", "ServerAliveInterval=60",
     "-o", "ServerAliveCountMax=3",
     "-p", $config.SSH_PORT
 )
+
+if ($Diagnostic) {
+    $diagnosticDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("erp-ssh-diagnostic-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $diagnosticDirectory | Out-Null
+    $diagnosticLog = Join-Path $diagnosticDirectory "ssh.log"
+    ("SSH diagnostic started at " + [DateTime]::UtcNow.ToString("o")) | Set-Content -LiteralPath $diagnosticLog -Encoding utf8
+    $sshArguments += @("-vv", "-E", $diagnosticLog)
+    Write-Host "SSH diagnostic log: $diagnosticLog"
+}
 
 if ($config.SSH_IDENTITY_FILE) {
     $sshArguments += @("-i", $config.SSH_IDENTITY_FILE)
@@ -127,6 +149,7 @@ $sshArguments += @(
 
 Write-Host "Opening PostgreSQL tunnel on $($config.SSH_TUNNEL_BIND_HOST):$($config.DB_TUNNEL_LOCAL_PORT)"
 Write-Host "Opening Redis tunnel on $($config.SSH_TUNNEL_BIND_HOST):$($config.REDIS_TUNNEL_LOCAL_PORT)"
+Write-Host "Complete Cloudflare Access browser sign-in if prompted, then SSH authentication."
 Write-Host "Keep this terminal open. Press Ctrl+C to close the tunnels."
 
 & ssh @sshArguments

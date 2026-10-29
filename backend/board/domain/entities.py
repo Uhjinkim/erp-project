@@ -15,11 +15,38 @@ class NoticeCategory(StrEnum):
     MANAGEMENT = "MANAGEMENT"
     HR = "HR"
     PAYROLL = "PAYROLL"
-    DEPARTMENT = "DEPARTMENT"
+
+
+class AuthoredContent:
+    writer_employee_no: int
+    deleted_at: datetime | None
+
+    def can_be_edited_by(self, actor_employee_no: int, actor_is_admin: bool) -> bool:
+        return actor_is_admin or actor_employee_no == self.writer_employee_no
+
+    def can_be_deleted_by(
+        self, actor_employee_no: int, actor_is_admin: bool, actor_is_moderator: bool
+    ) -> bool:
+        return actor_is_moderator or self.can_be_edited_by(actor_employee_no, actor_is_admin)
+
+    def soft_delete(
+        self,
+        actor_employee_no: int,
+        actor_is_admin: bool,
+        deleted_at: datetime,
+        actor_is_moderator: bool = False,
+    ) -> None:
+        if not self.can_be_deleted_by(actor_employee_no, actor_is_admin, actor_is_moderator):
+            raise BoardPermissionError("작성자 본인 또는 시스템관리자만 처리할 수 있습니다.")
+        self.deleted_at = deleted_at
+
+    def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:
+        if not self.can_be_edited_by(actor_employee_no, actor_is_admin):
+            raise BoardPermissionError("작성자 본인 또는 시스템관리자만 처리할 수 있습니다.")
 
 
 @dataclass
-class Post:
+class Post(AuthoredContent):
     post_id: int | None
     writer_employee_no: int
     post_type: PostType
@@ -30,6 +57,7 @@ class Post:
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
     writer_name: str | None = None
+    comment_count: int = 0
 
     def __post_init__(self) -> None:
         PostTitle(self.title)
@@ -46,21 +74,9 @@ class Post:
         self.title = title
         self.content = content
 
-    def soft_delete(
-        self, actor_employee_no: int, actor_is_admin: bool, deleted_at: datetime
-    ) -> None:
-        self._require_editor(actor_employee_no, actor_is_admin)
-        self.deleted_at = deleted_at
-
-    def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:
-        if actor_is_admin:
-            return
-        if actor_employee_no != self.writer_employee_no:
-            raise BoardPermissionError("작성자 본인 또는 시스템관리자만 처리할 수 있습니다.")
-
 
 @dataclass
-class Comment:
+class Comment(AuthoredContent):
     comment_id: int | None
     post_id: int
     writer_employee_no: int
@@ -78,18 +94,6 @@ class Comment:
         self._require_editor(actor_employee_no, actor_is_admin)
         CommentContent(content)
         self.content = content
-
-    def soft_delete(
-        self, actor_employee_no: int, actor_is_admin: bool, deleted_at: datetime
-    ) -> None:
-        self._require_editor(actor_employee_no, actor_is_admin)
-        self.deleted_at = deleted_at
-
-    def _require_editor(self, actor_employee_no: int, actor_is_admin: bool) -> None:
-        if actor_is_admin:
-            return
-        if actor_employee_no != self.writer_employee_no:
-            raise BoardPermissionError("작성자 본인 또는 시스템관리자만 처리할 수 있습니다.")
 
 
 def ensure_reply_depth_allowed(parent: Comment | None) -> None:

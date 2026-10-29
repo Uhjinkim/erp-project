@@ -1,0 +1,17 @@
+# Install as /home/erp/.config/systemd/user/erp.service (not a system unit).
+[Unit]
+Description=ERP rootless Docker Compose
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/erp/current
+ExecStart=/usr/bin/docker compose --env-file %h/.config/erp/compose.env -f deploy/compose.production.yml up -d --no-build --wait --wait-timeout 120
+ExecStop=/usr/bin/docker compose --env-file %h/.config/erp/compose.env -f deploy/compose.production.yml stop
+TimeoutStartSec=180
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target

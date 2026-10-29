@@ -9,7 +9,9 @@ from workforce.infrastructure.models import (
     Employee,
     EmployeeRole,
     EmploymentHistory,
+    EmploymentHistoryChange,
     Person,
+    PersonalInfoChangeRequest,
     Position,
     Role,
 )
@@ -19,6 +21,8 @@ __all__ = [
     "Employee",
     "EmployeeRole",
     "EmploymentHistory",
+    "EmploymentHistoryChange",
+    "PersonalInfoChangeRequest",
     "Person",
     "Position",
     "Role",

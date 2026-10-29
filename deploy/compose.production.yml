@@ -1,0 +1,73 @@
+name: erp
+services:
+  backend:
+    image: erp-backend:${ERP_IMAGE_TAG:?Set ERP_IMAGE_TAG to a release identifier}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: backend
+    env_file:
+      - path: ${ERP_BACKEND_ENV_FILE:?Set ERP_BACKEND_ENV_FILE to an absolute path}
+        format: raw
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_ENV_FILE: /nonexistent
+      DB_SSLROOTCERT: /run/rds/ca.pem
+    volumes:
+      - type: bind
+        source: ${ERP_RDS_CA_FILE:?Set ERP_RDS_CA_FILE to an absolute path}
+        target: /run/rds/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 45s
+    networks: [app]
+    # Process liveness only. Full readiness requires /api/health/ body checks.
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=2).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+  nginx:
+    image: erp-nginx:${ERP_IMAGE_TAG:?Set ERP_IMAGE_TAG to a release identifier}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: nginx
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:?Set ERP_DOMAIN to the public DNS hostname}
+    ports:
+      - "127.0.0.1:8080:8080"
+    user: "101:101"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [app]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  app:
+    driver: bridge

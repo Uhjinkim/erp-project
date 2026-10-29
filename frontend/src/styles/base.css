@@ -1,0 +1,11 @@
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 0; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+a { color: var(--color-action); }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+h1, h2, h3, p { overflow-wrap: anywhere; }
+.legacy-module { min-width: 0; }
+.legacy-module > .employee-picker { max-width: 360px; margin-bottom: var(--space-5); }
+/* Existing business screens stay isolated until their module owners replace them. */

@@ -27,3 +27,16 @@ docs/contributions/payroll/feature-payroll-confirmation/README.md
 
 전체 브랜치 및 병합 절차는 [기능 모듈 브랜치·문서 협업 가이드](../guides/module-branch-docs-workflow.md)를
 따른다.
+
+
+현재 검토 기준은 [기여 통합 현황](./integration-status.md)을 따른다. 유지·변경·충돌과 공용 반영 여부는
+원본 기여 README를 고치지 않고 별도 integration-review.md에 기록한다. 제품/환경/검증 의제가
+남은 초안은 화면 연결이나 API 기록 반영만으로 삭제하지 않는다.
+
+## 2026-10-28 공용 문서 갱신
+
+- [최신 기여 통합·배포 준비 보고서](../reports/2026-10-28_documentation-deployment-readiness.md)
+- [Ubuntu EC2·RDS 배포 가이드](../guides/ec2-rds-deployment.md)
+
+개인정보 수정 요청의 2026-10-27 사용자 결정과 현재 구현을 반영했다. Notion 원문 변경·확인일은
+갱신하지 않았다. 빈 RDS 초기화와 workforce 0007 적용은 staging 검증·대상 승인 이후의 작업이다.

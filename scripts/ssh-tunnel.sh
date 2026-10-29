@@ -4,7 +4,24 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPOSITORY_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-ENV_FILE=${1:-"$REPOSITORY_DIR/.env"}
+ENV_FILE="$REPOSITORY_DIR/.env"
+ENV_FILE_SET=0
+DIAGNOSTIC=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --diagnostic) DIAGNOSTIC=1 ;;
+        -*) echo "Usage: $0 [ENV_FILE] [--diagnostic]" >&2; exit 1 ;;
+        *)
+            if [ "$ENV_FILE_SET" -eq 1 ]; then
+                echo "Only one environment file may be supplied." >&2
+                exit 1
+            fi
+            ENV_FILE=$1
+            ENV_FILE_SET=1
+            ;;
+    esac
+    shift
+done
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "Environment file not found: $ENV_FILE" >&2
@@ -67,6 +84,14 @@ if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ]; then
     exit 1
 fi
 
+# %h is expanded inside ProxyCommand, so accept only a hostname/SSH alias here.
+case "$SSH_HOST" in
+    -* | *[!a-zA-Z0-9_.-]*)
+        echo "SSH_HOST must be a hostname or SSH alias, without a URL scheme or shell characters." >&2
+        exit 1
+        ;;
+esac
+
 check_port() {
     name=$1
     value=$2
@@ -95,12 +120,27 @@ if ! command -v ssh >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "cloudflared not found. Install it and add it to PATH before opening the SSH tunnel." >&2
+    exit 1
+fi
+
 set -- ssh \
     -N \
+    -o "ProxyCommand=cloudflared access ssh --hostname %h" \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=60 \
     -o ServerAliveCountMax=3 \
     -p "$SSH_PORT"
+
+if [ "$DIAGNOSTIC" -eq 1 ]; then
+    # mktemp creates a private directory; logs contain connection metadata, not passwords.
+    DIAGNOSTIC_DIR=$(mktemp -d "${TMPDIR:-/tmp}/erp-ssh-diagnostic.XXXXXX")
+    DIAGNOSTIC_LOG="$DIAGNOSTIC_DIR/ssh.log"
+    printf 'SSH diagnostic started at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$DIAGNOSTIC_LOG"
+    set -- "$@" -vv -E "$DIAGNOSTIC_LOG"
+    echo "SSH diagnostic log: $DIAGNOSTIC_LOG"
+fi
 
 if [ -n "$SSH_IDENTITY_FILE" ]; then
     set -- "$@" -i "$SSH_IDENTITY_FILE"
@@ -113,6 +153,7 @@ set -- "$@" \
 
 echo "Opening PostgreSQL tunnel on $SSH_TUNNEL_BIND_HOST:$DB_TUNNEL_LOCAL_PORT"
 echo "Opening Redis tunnel on $SSH_TUNNEL_BIND_HOST:$REDIS_TUNNEL_LOCAL_PORT"
+echo "Complete Cloudflare Access browser sign-in if prompted, then SSH authentication."
 echo "Keep this terminal open. Press Ctrl+C to close the tunnels."
 
 exec "$@"

@@ -2,9 +2,9 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 
-from vacation.application.dto import RequestVacationCommand, ResubmitVacationCommand
+from vacation.application.dto import RequestVacationCommand, ResubmitVacationCommand, type_to_dict
 from vacation.application.ports import LeaveBalanceGateway, WorkforceGateway
-from vacation.domain.entities import VacationHistory, VacationRequest, VacationStatus
+from vacation.domain.entities import VacationHistory, VacationRequest, VacationStatus, VacationType
 from vacation.domain.exceptions import (
     ApproverNotFoundError,
     InactiveEmployeeError,
@@ -32,9 +32,9 @@ class VacationService:
         self._ensure_active(command.employee_no)
         approver_no = self._resolve_approver(command.employee_no)
         use_days = UseDays(command.use_days)
-        self._ensure_balance(command.employee_no, command.type_id, use_days.value)
         with self.unit_of_work_factory() as uow:
             uow.types.get(command.type_id)
+            self._ensure_balance(command.employee_no, command.type_id, use_days.value)
             request = uow.requests.add(
                 VacationRequest(
                     request_id=None,
@@ -90,11 +90,12 @@ class VacationService:
         self._ensure_active(command.employee_no)
         approver_no = self._resolve_approver(command.employee_no)
         use_days = UseDays(command.use_days)
-        self._ensure_balance(command.employee_no, command.type_id, use_days.value)
         with self.unit_of_work_factory() as uow:
             uow.types.get(command.type_id)
+            self._ensure_balance(command.employee_no, command.type_id, use_days.value)
             request = uow.requests.get(command.request_id, for_update=True)
             previous = request.status
+            before_values = self._snapshot(request)
             request.resubmit(
                 command.employee_no,
                 command.type_id,
@@ -104,7 +105,9 @@ class VacationService:
                 command.reason,
             )
             uow.requests.save(request)
-            self._record(uow, request, previous, command.employee_no, command.reason)
+            self._record(
+                uow, request, previous, command.employee_no, command.reason, before_values
+            )
             return request
 
     def history(self, request_id: int, employee_no: int) -> list[VacationHistory]:
@@ -118,9 +121,24 @@ class VacationService:
                 )
             return uow.histories.list_for_request(request_id)
 
-    def list_types(self) -> list[object]:
+    def list_types(self, employee_no: int) -> list[VacationType]:
+        self._ensure_active(employee_no)
         with self.unit_of_work_factory() as uow:
             return uow.types.list_active()
+
+    def list_type_balances(self, employee_no: int) -> list[dict[str, object]]:
+        """LV-001: expose the same balance policy used by submission, in one batch."""
+        types = self.list_types(employee_no)
+        balances = self.balances.remaining_for_types(employee_no, types)
+        return [
+            {
+                **type_to_dict(item),
+                "remaining_days": (
+                    str(balances[item.type_id]) if balances[item.type_id] is not None else None
+                ),
+            }
+            for item in types
+        ]
 
     def _transition(
         self,
@@ -133,9 +151,17 @@ class VacationService:
         with self.unit_of_work_factory() as uow:
             request = uow.requests.get(request_id, for_update=True)
             previous = request.status
+            before_values = self._snapshot(request)
             operation(request)
+            if previous != VacationStatus.APPROVED and request.status == VacationStatus.APPROVED:
+                request.balance_deducted = self.balances.deduct(
+                    request.employee_no, request.type_id, request.use_days.value
+                )
+            elif previous == VacationStatus.APPROVED and request.balance_deducted:
+                self.balances.restore(request.employee_no, request.type_id, request.use_days.value)
+                request.balance_deducted = False
             uow.requests.save(request)
-            self._record(uow, request, previous, employee_no, reason)
+            self._record(uow, request, previous, employee_no, reason, before_values)
             return request
 
     def _record(
@@ -145,6 +171,7 @@ class VacationService:
         previous: VacationStatus | None,
         actor: int,
         reason: str | None,
+        before_values: dict[str, object] | None = None,
     ) -> None:
         if request.request_id is None:
             raise RuntimeError("저장된 휴가 신청에 ID가 없습니다.")
@@ -157,8 +184,25 @@ class VacationService:
                 actor_employee_no=actor,
                 reason=reason,
                 changed_at=self.clock(),
+                before_values=before_values,
+                after_values=self._snapshot(request),
             )
         )
+
+    @staticmethod
+    def _snapshot(request: VacationRequest) -> dict[str, object]:
+        """LV-008: preserve correction values independently of the mutable request."""
+        return {
+            "type_id": request.type_id,
+            "start_datetime": request.period.start.isoformat(),
+            "end_datetime": request.period.end.isoformat(),
+            "use_days": str(request.use_days.value),
+            "approver_no": request.approver_no,
+            "request_reason": request.request_reason,
+            "approved_at": request.approved_at.isoformat() if request.approved_at else None,
+            "reject_reason": request.reject_reason,
+            "balance_deducted": request.balance_deducted,
+        }
 
     def _ensure_active(self, employee_no: int) -> None:
         if not self.workforce.is_active_employee(employee_no):

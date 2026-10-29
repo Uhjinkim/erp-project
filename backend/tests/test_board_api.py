@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from board.infrastructure.models import NoticeCategoryModel
-from workforce.application.services import PAYROLL_MANAGER_ROLE
+from workforce.application.services import MANAGEMENT_OFFICER_ROLE, PAYROLL_MANAGER_ROLE
 from workforce.infrastructure.models import (
     Department,
     Employee,
@@ -245,3 +245,124 @@ def test_comment_and_reply_flow() -> None:
     listing_after_delete = client.get(f"/api/board/posts/{post_id}/comments/")
     assert listing_after_delete.status_code == 200
     assert len(listing_after_delete.data) == 1
+
+
+@pytest.mark.django_db
+def test_eligible_notice_categories_reflects_role_assignment() -> None:
+    ordinary = create_employee(1001, "ordinary@example.com")
+    ordinary_user = create_user(ordinary)
+    payroll_employee = create_employee(9001, "payroll@example.com")
+    assign_role(payroll_employee, PAYROLL_MANAGER_ROLE, "급여 담당자")
+    payroll_user = create_user(payroll_employee)
+
+    client = APIClient()
+    client.force_authenticate(ordinary_user)
+    response = client.get("/api/board/notice-categories/eligible/")
+    assert response.status_code == 200
+    assert response.data["categories"] == []
+
+    client.force_authenticate(payroll_user)
+    response = client.get("/api/board/notice-categories/eligible/")
+    assert response.status_code == 200
+    assert response.data["categories"] == ["PAYROLL"]
+
+
+@pytest.mark.django_db
+def test_post_list_includes_active_comment_count_per_post() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    other = create_employee(2002, "other@example.com")
+    other_user = create_user(other)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    busy = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "댓글 많은 글", "content": "내용"},
+        format="json",
+    ).data["post_id"]
+    quiet = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "댓글 없는 글", "content": "내용"},
+        format="json",
+    ).data["post_id"]
+
+    first = client.post(
+        f"/api/board/posts/{busy}/comments/", {"content": "첫 댓글"}, format="json"
+    ).data["comment_id"]
+    client.post(
+        f"/api/board/posts/{busy}/comments/",
+        {"content": "답글", "parent_comment_id": first},
+        format="json",
+    )
+    removed = client.post(
+        f"/api/board/posts/{busy}/comments/", {"content": "곧 삭제"}, format="json"
+    ).data["comment_id"]
+    client.delete(f"/api/board/comments/{removed}/")
+
+    client.force_authenticate(other_user)
+    listing = client.get("/api/board/posts/").data
+    counts = {item["post_id"]: item["comment_count"] for item in listing}
+    assert counts == {busy: 2, quiet: 0}
+
+    detail = client.get(f"/api/board/posts/{busy}/")
+    assert detail.data["comment_count"] == 2
+
+
+@pytest.mark.django_db
+def test_management_officer_can_delete_but_not_edit_others_content() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    officer = create_employee(3003, "officer@example.com")
+    assign_role(officer, MANAGEMENT_OFFICER_ROLE, "경영 담당자")
+    officer_user = create_user(officer)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    post_id = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "제목", "content": "내용"},
+        format="json",
+    ).data["post_id"]
+    comment_id = client.post(
+        f"/api/board/posts/{post_id}/comments/", {"content": "댓글"}, format="json"
+    ).data["comment_id"]
+
+    client.force_authenticate(officer_user)
+    assert client.patch(
+        f"/api/board/posts/{post_id}/", {"title": "변경", "content": "변경"}, format="json"
+    ).status_code == 403
+    assert client.patch(
+        f"/api/board/comments/{comment_id}/", {"content": "변경"}, format="json"
+    ).status_code == 403
+
+    assert client.delete(f"/api/board/comments/{comment_id}/").status_code == 204
+    assert client.delete(f"/api/board/posts/{post_id}/").status_code == 204
+    assert client.get(f"/api/board/posts/{post_id}/").status_code == 404
+
+
+@pytest.mark.django_db
+def test_responses_expose_viewer_specific_edit_and_delete_permissions() -> None:
+    author = create_employee(1001, "author@example.com")
+    author_user = create_user(author)
+    other_user = create_user(create_employee(2002, "other@example.com"))
+    officer = create_employee(3003, "officer@example.com")
+    assign_role(officer, MANAGEMENT_OFFICER_ROLE, "경영 담당자")
+    officer_user = create_user(officer)
+
+    client = APIClient()
+    client.force_authenticate(author_user)
+    created = client.post(
+        "/api/board/posts/", {"post_type": "일반", "title": "제목", "content": "내용"},
+        format="json",
+    )
+    assert (created.data["can_edit"], created.data["can_delete"]) == (True, True)
+    post_id = created.data["post_id"]
+    client.post(f"/api/board/posts/{post_id}/comments/", {"content": "댓글"}, format="json")
+
+    expected = {other_user: (False, False), officer_user: (False, True)}
+    for user, flags in expected.items():
+        client.force_authenticate(user)
+        post = client.get(f"/api/board/posts/{post_id}/").data
+        assert (post["can_edit"], post["can_delete"]) == flags
+        listed = client.get("/api/board/posts/").data[0]
+        assert (listed["can_edit"], listed["can_delete"]) == flags
+        comment = client.get(f"/api/board/posts/{post_id}/comments/").data[0]
+        assert (comment["can_edit"], comment["can_delete"]) == flags

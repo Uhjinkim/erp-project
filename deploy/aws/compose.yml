@@ -1,0 +1,71 @@
+name: erp
+services:
+  backend:
+    image: ${ERP_REGISTRY:?required}/erp/backend:${ERP_IMAGE_TAG:?required}
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DJANGO_ENV_FILE: /nonexistent
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?required}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?required}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:?required}
+      DB_HOST: ${DB_HOST:?required}
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:?required}
+      DB_USER: ${DB_USER:?required}
+      DB_PASSWORD: ${DB_PASSWORD:?required}
+      DB_SSLMODE: verify-full
+      DB_SSLROOTCERT: /run/rds/ca.pem
+      REDIS_URL: ${REDIS_URL:?required}
+      REFERENCE_CACHE_URL: ${REFERENCE_CACHE_URL:?required}
+      REFERENCE_CACHE_KEY_PREFIX: erp:production:reference:v1
+      HEALTH_CHECK_TIMEOUT_SECONDS: "3"
+    volumes:
+      - type: bind
+        source: ${ERP_RDS_CA_FILE:?required}
+        target: /run/rds/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 45s
+    networks: [app]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=2).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+  nginx:
+    image: ${ERP_REGISTRY:?required}/erp/nginx:${ERP_IMAGE_TAG:?required}
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:?required}
+    ports: ["127.0.0.1:8080:8080"]
+    user: "101:101"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [app]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  app:
+    driver: bridge

@@ -1,8 +1,13 @@
 export type PostType = "일반" | "공지"
 
-export type NoticeCategory = "MANAGEMENT" | "HR" | "PAYROLL" | "DEPARTMENT"
+export type NoticeCategory = "MANAGEMENT" | "HR" | "PAYROLL"
 
-export type Post = {
+type ViewerPermissions = {
+  can_edit: boolean
+  can_delete: boolean
+}
+
+export type Post = ViewerPermissions & {
   post_id: number
   writer_employee_no: number
   writer_name: string | null
@@ -10,11 +15,12 @@ export type Post = {
   notice_category: NoticeCategory | null
   title: string
   content: string
+  comment_count: number
   created_at: string
   updated_at: string | null
 }
 
-export type Comment = {
+export type Comment = ViewerPermissions & {
   comment_id: number
   post_id: number
   writer_employee_no: number

@@ -1,0 +1,157 @@
+-- Fill missing profile fields for the 50 synthetic employees created in erp_dev.public.
+-- This file never creates employees and never overwrites an existing non-NULL value.
+-- Generated phone numbers, addresses and bank details are visibly synthetic.
+-- Active employees keep term_date NULL; account last_login stays NULL until login.
+--
+-- Preview without saving:
+--   psql -v preview=true -f scripts/sql/fill_50_test_employee_profiles.psql
+-- Apply to the confirmed development database:
+--   psql -f scripts/sql/fill_50_test_employee_profiles.psql
+
+\set ON_ERROR_STOP on
+\if :{?preview}
+\else
+\set preview false
+\endif
+
+BEGIN;
+SET LOCAL search_path TO public;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+
+CREATE TEMP TABLE test_employee_profile (
+    emp_no integer PRIMARY KEY,
+    gender char(1) NOT NULL,
+    phone varchar(20) NOT NULL,
+    ext_no varchar(20) NOT NULL,
+    address varchar(255) NOT NULL,
+    bank_code varchar(20) NOT NULL,
+    account_no varchar(100) NOT NULL
+) ON COMMIT DROP;
+
+INSERT INTO test_employee_profile (
+    emp_no, gender, phone, ext_no, address, bank_code, account_no
+)
+SELECT
+    number,
+    CASE WHEN number % 2 = 1 THEN 'M' ELSE 'F' END,
+    format('010-0000-%s', lpad((number - 910000)::text, 4, '0')),
+    (number - 909000)::text,
+    CASE
+        WHEN number BETWEEN 910001 AND 910010
+            THEN format('서울특별시 테스트구 인사로 %s (가상 주소)', number - 910000)
+        WHEN number BETWEEN 910011 AND 910025
+            THEN format('경기도 테스트시 개발로 %s (가상 주소)', number - 910000)
+        WHEN number BETWEEN 910026 AND 910037
+            THEN format('서울특별시 테스트구 재무로 %s (가상 주소)', number - 910000)
+        ELSE format('부산광역시 테스트구 영업로 %s (가상 주소)', number - 910000)
+    END,
+    'TEST',
+    format('TEST-%s', number)
+FROM generate_series(910001, 910050) AS number;
+
+DO $validate_targets$
+BEGIN
+    IF current_database() <> 'erp_dev' OR current_schema() <> 'public' THEN
+        RAISE EXCEPTION 'Expected erp_dev.public; no changes applied';
+    END IF;
+
+    -- Keep the target rows stable during validation and update.
+    PERFORM 1
+    FROM employees AS employee
+    JOIN persons AS person USING (person_id)
+    JOIN accounts_users AS account USING (emp_no)
+    JOIN test_employee_profile AS profile USING (emp_no)
+    FOR UPDATE OF employee, person;
+
+    IF (
+        SELECT count(*)
+        FROM test_employee_profile AS profile
+        JOIN employees AS employee USING (emp_no)
+        JOIN persons AS person USING (person_id)
+        JOIN accounts_users AS account USING (emp_no)
+        WHERE employee.email = format('employee%s@example.invalid', profile.emp_no)
+          AND account.email = employee.email
+          AND employee.tenure_status = '재직'
+          AND employee.term_date IS NULL
+          AND employee.dept_no = CASE
+              WHEN profile.emp_no BETWEEN 910001 AND 910010 THEN 9110
+              WHEN profile.emp_no BETWEEN 910011 AND 910025 THEN 9120
+              WHEN profile.emp_no BETWEEN 910026 AND 910037 THEN 9130
+              ELSE 9140
+          END
+          AND NOT EXISTS (
+              SELECT 1 FROM employees AS other
+              WHERE other.person_id = person.person_id
+                AND other.emp_no <> employee.emp_no
+          )
+    ) <> 50 THEN
+        RAISE EXCEPTION 'Expected all 50 original active test accounts and unshared persons; no changes applied';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM test_employee_profile AS profile
+        JOIN employees AS other ON other.emp_no NOT BETWEEN 910001 AND 910050
+        WHERE other.phone = profile.phone OR other.ext_no = profile.ext_no
+    ) THEN
+        RAISE EXCEPTION 'Generated test phone or extension conflicts with an existing employee';
+    END IF;
+END
+$validate_targets$;
+
+UPDATE persons AS person
+SET gender = profile.gender
+FROM employees AS employee
+JOIN test_employee_profile AS profile USING (emp_no)
+WHERE person.person_id = employee.person_id
+  AND person.gender IS NULL;
+
+UPDATE employees AS employee
+SET phone = COALESCE(employee.phone, profile.phone),
+    ext_no = COALESCE(employee.ext_no, profile.ext_no),
+    address = COALESCE(employee.address, profile.address),
+    bank_code = COALESCE(employee.bank_code, profile.bank_code),
+    account_no = COALESCE(employee.account_no, profile.account_no)
+FROM test_employee_profile AS profile
+WHERE employee.emp_no = profile.emp_no
+  AND (
+      employee.phone IS NULL OR employee.ext_no IS NULL OR employee.address IS NULL
+      OR employee.bank_code IS NULL OR employee.account_no IS NULL
+  );
+
+DO $validate_result$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM test_employee_profile AS profile
+        JOIN employees AS employee USING (emp_no)
+        JOIN persons AS person USING (person_id)
+        WHERE person.gender IS NULL
+           OR employee.phone IS NULL
+           OR employee.ext_no IS NULL
+           OR employee.address IS NULL
+           OR employee.bank_code IS NULL
+           OR employee.account_no IS NULL
+    ) THEN
+        RAISE EXCEPTION 'A target profile field remains NULL; no changes will be committed';
+    END IF;
+END
+$validate_result$;
+
+SELECT 'profile_rows' AS measure, count(*) AS value
+FROM employees AS employee
+JOIN test_employee_profile AS profile USING (emp_no)
+UNION ALL
+SELECT 'synthetic_bank_codes', count(*)
+FROM employees AS employee
+JOIN test_employee_profile AS profile USING (emp_no)
+WHERE employee.bank_code = 'TEST';
+
+\if :preview
+ROLLBACK;
+\echo 'Preview complete; no changes saved.'
+\else
+COMMIT;
+\echo 'Filled NULL profile fields for 50 test employees.'
+\endif

@@ -78,6 +78,10 @@ class PayrollStatement:
         # entered, not here.
         return self.total_earnings - self.total_deductions
 
+    def change_payment_date(self, payment_date: date) -> None:
+        self._require_status(PayrollStatus.DRAFT, "확정된 급여의 지급일은 직접 수정할 수 없습니다.")
+        self.payment_date = payment_date
+
     def replace_items(self, items: list[PayrollItem]) -> None:
         self._require_status(PayrollStatus.DRAFT, "확정된 급여는 직접 수정할 수 없습니다.")
         if not items:

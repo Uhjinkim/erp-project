@@ -2,6 +2,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from decimal import Decimal
 
+from vacation.domain.balance import balance_type_id
 from vacation.domain.entities import VacationHistory, VacationRequest, VacationType
 
 
@@ -54,6 +55,7 @@ def type_to_dict(vacation_type: VacationType) -> dict[str, object]:
     return {
         "type_id": vacation_type.type_id,
         "type_name": vacation_type.type_name,
+        "balance_type_id": balance_type_id(vacation_type.type_id),
         "is_paid": vacation_type.is_paid,
         "deduct_days": vacation_type.deduct_days,
     }

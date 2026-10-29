@@ -20,4 +20,46 @@ Markdown 스냅샷이다. Notion이 원문(source of truth)이며, 코드 변경
 
 - [Workforce 명세 구현 대응표](./workforce-implementation-map.md)
 
-마지막 원문 확인일: 2026-09-25
+## 기여 문서 부분 통합
+
+- [2026-10-12 통합 보고서](../../reports/2026-10-12_contribution-docs-integration.md)
+- [모듈 담당자 검토 의제](../../reports/2026-10-12_module-review-agenda.md)
+- [의제 공유 양식](../../guides/module-review-agenda.md)
+
+02·03·04 원문 확인일: 2026-10-12. 다른 스냅샷의 확인일은 각 문서의 메타데이터를 따른다.
+추가 정책·충돌 항목은 통합하지 않았으며, 현재 구현 기록은 제품 정책 승인·배포 완료를 의미하지 않는다.
+
+06·08은 2026-10-12 Notion 부분 반영과 재조회 확인을 완료했다. 반영 범위는 통합 보고서를 따른다.
+
+2026-10-13 휴가 코드 수정에 따른 06·08 저장소 변경은
+[수정 보고서](../../reports/2026-10-13_vacation-fixes.md)를 따른다. Notion 원문 갱신은 수행하지 않았다.
+공유 개발 DB `erp_dev.public`에는 2026-10-13 사용자 대상 확인 후 vacation 0003을 적용했다.
+
+로컬에 남아 있던 휴가 수정과 원격 dev의 다른 모듈을 함께 반영한 결과는
+[2026-10-13 원격·로컬 통합 확인](../../reports/2026-10-13_dev-local-integration.md)에 기록한다.
+
+
+## 2026-10-14 기여 문서 구현 통합
+
+dev 4f77219를 기준으로 [유지·변경·충돌](../../reports/2026-10-14_contribution-docs-integration.md)을
+분류했다. 해결된 업무 대상 조회·화면 진입, 누락된 HR 생애주기/이력 API와 현재 테이블 구현을
+06·08·workforce 대응표 및 공용 토대 계약에 반영했다. 02·03·04·07의 원문 정책은 유지했다.
+[최신 미결 의제](../../reports/2026-10-14_module-review-agenda.md)와
+[기여 통합 현황](../../contributions/integration-status.md)을 함께 확인한다.
+이번에는 Notion 원문을 조회·수정하지 않았으며 원문 확인일을 최신 코드 확인일로 바꾸지 않았다.
+
+## 2026-10-28 공용 문서 갱신
+
+- [최신 기여 통합·배포 준비 보고서](../../reports/2026-10-28_documentation-deployment-readiness.md)
+- [Ubuntu EC2·RDS 배포 가이드](../../guides/ec2-rds-deployment.md)
+
+개인정보 수정 요청의 2026-10-27 사용자 결정과 현재 구현을 반영했다. Notion 원문 변경·확인일은
+갱신하지 않았다. 빈 RDS 초기화와 workforce 0007 적용은 staging 검증·대상 승인 이후의 작업이다.
+
+
+## 2026-10-29 기준 목록 캐시
+
+06 API의 응답 계약을 유지하면서 Redis/Valkey 기준 목록 캐시를 추가했다.
+[구현·검증 보고서](../../reports/2026-10-29_reference-cache.md)와
+[운영 설정 안내](../../guides/github-actions-aws-deployment.md)를 따른다.
+Notion 원문 확인일·업무 정책·테이블 정의는 변경하지 않았다.

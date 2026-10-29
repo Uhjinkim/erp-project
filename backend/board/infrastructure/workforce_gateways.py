@@ -4,9 +4,10 @@ from workforce.application.services import (
     HR_MANAGER_ROLE,
     MANAGEMENT_OFFICER_ROLE,
     PAYROLL_MANAGER_ROLE,
+    active_employee_roles,
 )
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
-from workforce.infrastructure.models import Department, Employee
+from workforce.infrastructure.models import Employee
 
 
 class DjangoWorkforceGateway(WorkforceGateway):
@@ -15,14 +16,15 @@ class DjangoWorkforceGateway(WorkforceGateway):
         return employee is not None and employee.is_active_employee
 
     def eligible_notice_categories(self, employee_no: int) -> set[NoticeCategory]:
-        gateway = DjangoWorkforceQueryGateway()
+        roles = active_employee_roles(employee_no, DjangoWorkforceQueryGateway())
         categories: set[NoticeCategory] = set()
-        if gateway.has_active_role(employee_no, MANAGEMENT_OFFICER_ROLE):
+        if MANAGEMENT_OFFICER_ROLE in roles:
             categories.add(NoticeCategory.MANAGEMENT)
-        if gateway.has_active_role(employee_no, HR_MANAGER_ROLE):
+        if HR_MANAGER_ROLE in roles:
             categories.add(NoticeCategory.HR)
-        if gateway.has_active_role(employee_no, PAYROLL_MANAGER_ROLE):
+        if PAYROLL_MANAGER_ROLE in roles:
             categories.add(NoticeCategory.PAYROLL)
-        if Department.objects.filter(head_id=employee_no).exists():
-            categories.add(NoticeCategory.DEPARTMENT)
         return categories
+
+    def is_board_moderator(self, employee_no: int) -> bool:
+        return DjangoWorkforceQueryGateway().has_active_role(employee_no, MANAGEMENT_OFFICER_ROLE)

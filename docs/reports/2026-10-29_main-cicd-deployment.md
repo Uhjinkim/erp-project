@@ -1,0 +1,31 @@
+# main CI/CD · AWS 배포 실측
+
+일자: 2026-10-29. 사용자 요청: 로컬 변경을 dev에 반영하고 main으로 통합·배포,
+GitHub Actions CI/CD, 기존 서울 EC2/RDS/Valkey/Secret, 퍼블릭 IP Let’s Encrypt HTTPS.
+
+## 구현과 인프라
+
+- main만 OIDC 배포하는 CI/CD workflow, ARM64 ECR 이미지, S3 checksum bundle, 제한된 SSM document.
+- memory-only Secret 주입, rootless Compose, 환경변수 allowlist, TLS RDS/Valkey, read-only schema preflight.
+- 실패 rollback·archive 경로 검사·동적 참조 단일 치환·Secret 없이 stop하는 회귀 테스트.
+- ECR 2개·비공개 암호화/versioning S3·OIDC·runtime/deploy IAM 역할·SSM document 생성.
+- 기존 EC2에 runtime instance profile 연결. HTTP-01용 80만 추가 개방. 기존 443/SSH 규칙 유지.
+- Ubuntu 26.04 ARM64, 기존 rootless Docker 정상. SSM Agent 재시작 후 AWS에서 Online 실측.
+- nginx/AWS CLI/Certbot/Workload Credentials Provider 설치. Provider 바이너리 SHA256 검증.
+- IP staging·정식 인증서 발급, 갱신 timer·nginx reload hook. 외부 인증서 검증=0, HTTP 301 확인.
+- 기존 Secret의 DB_PASSWORD/REDIS_URL 유지. 짧은 Django 키 대신 별도 생성 Secret 사용.
+- DB erp-db / 사용자 erp는 사용자 확인. DB_NAME/DB_USER가 Secret에 없어 비밀 없는 호스트 설정 사용.
+
+## 검증
+
+- 기존 전체 변경: backend check/Ruff/pytest 561 passed/migration drift 없음, frontend lint/69 tests/build 통과.
+- 배포 회귀 7 tests 통과, deploy Python Ruff 통과, workflow actionlint 통과, shell syntax 통과.
+- dummy 환경변수로 AWS Compose config --quiet 통과. 로컬 Docker daemon은 꺼져 있어 새 이미지
+  로컬 실행은 하지 않았으며 GitHub ARM64 빌드와 EC2에서 검증한다.
+- 개발 start-dev --check는 sandbox의 sysctl 제한 때문에 일반 실행이 실패했으나 허용된 실행에서 통과.
+- Secret 값·SSH key·계좌/사원 데이터는 출력하지 않았다. 자격증명 패턴 diff 검사에서 발견 없음.
+
+## 진행 중
+
+Git dev/main 반영, GitHub CI/CD 실제 실행 결과, RDS 연결·schema readiness와 공개 앱 health 결과를
+마지막 검증 후 여기에 추가한다. DB migration·schema/data 쓰기·seed는 아직 실행하지 않았다.

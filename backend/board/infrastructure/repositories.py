@@ -1,3 +1,6 @@
+from django.db.models import Count, OuterRef, Subquery
+from django.db.models.functions import Coalesce
+
 from board.domain.entities import Comment, Post
 from board.domain.exceptions import CommentNotFoundError, PostNotFoundError
 from board.domain.repositories import CommentRepository, PostRepository
@@ -45,7 +48,16 @@ class DjangoPostRepository(PostRepository):
         ]
 
     def _select_related(self):
-        return PostModel.objects.select_related("writer__person")
+        active_comments = (
+            CommentModel.objects.filter(post_id=OuterRef("pk"), deleted_at__isnull=True)
+            .order_by()
+            .values("post_id")
+            .annotate(total=Count("pk"))
+            .values("total")
+        )
+        return PostModel.objects.select_related("writer__person").annotate(
+            comment_count=Coalesce(Subquery(active_comments), 0)
+        )
 
 
 class DjangoCommentRepository(CommentRepository):

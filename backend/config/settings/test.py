@@ -31,4 +31,16 @@ MIGRATION_MODULES = {
     "workforce": None,
     "payroll": None,
     "board": None,
+    "evaluation": None,
+}
+
+# Tests opt into a local cache explicitly and never contact the shared Redis.
+REFERENCE_CACHE_ENABLED = False
+REFERENCE_CACHE_TTL = 180
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "reference": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "reference-tests",
+    },
 }
