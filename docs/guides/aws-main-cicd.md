@@ -5,10 +5,13 @@
 ## 배포 흐름
 
 1. 로컬 검증 후 `dev`에 commit/push한다. `dev` push와 `dev`/`main` 대상 PR은 CI만 수행한다.
+   Markdown/문서만 변경한 push/PR은 실행을 생략하며, 수동 실행은 main에서 가능하다.
 2. `dev`를 `main`에 merge/push하면 `.github/workflows/ci-cd.yml`이 실행된다.
 3. SQLite 기반 backend 검사·전체 pytest·migration drift 검사·배포 회귀 테스트,
    frontend lint·69개 테스트·production build가 모두 성공해야 배포한다.
 4. GitHub OIDC가 `erp-github-deploy`를 인수한다. 신뢰 조건은 이 저장소의 `refs/heads/main`이다.
+   실제 발급 subject는 `repo:Uhjinkim@13661028/erp-project@1363960456:ref:refs/heads/main`이며
+   CloudTrail에서 확인한 owner/repository immutable ID 포함 값을 정확히 사용한다.
    GitHub Environment를 추가하면 OIDC subject가 바뀌므로 역할 신뢰 정책도 함께 바꿔야 한다.
 5. ARM64 runner에서 backend와 nginx/frontend 이미지를 빌드해 ECR에 commit SHA로 push한다.
    태그는 immutable이며 같은 SHA 재실행은 기존 이미지를 사용한다.
@@ -48,7 +51,8 @@ DB 이름·사용자·endpoint·도메인/IP·Secret ARN·ECR/S3 식별자를 �
 기존 Secret의 DB_PASSWORD·REDIS_URL을 유지하며, 별도 Secret의 Django 키가 기존 키보다 우선한다.
 Valkey URL은 `rediss://`여야 한다. 추가 cache URL도 같은 TLS 요구를 적용한다.
 
-EC2 역할은 지정한 Secret 2개 읽기, 해당 ECR pull, 릴리스 prefix 읽기와 SSM Core만 허용한다.
+EC2 역할은 지정한 Secret 2개의 GetSecretValue/DescribeSecret, 해당 ECR pull,
+릴리스 prefix 읽기와 SSM Core만 허용한다. DescribeSecret은 provider의 캐시 갱신에도 필요하다.
 GitHub 역할은 ECR push, 릴리스 prefix 쓰기, 지정 EC2/document의 SendCommand와 결과 조회만
 허용한다. GitHub에는 운영 Secret 읽기 권한이나 장기 AWS 키가 없다.
 

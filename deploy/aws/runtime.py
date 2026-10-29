@@ -106,6 +106,7 @@ def main():
             **os.environ,
             "AWS_REGION": config["region"],
             "AWS_TOKEN": "file:///run/erp-secrets/token",
+            "ASM_EXEC_LOCAL_ONLY": "true",
             "ERP_SECRET_JSON": "{{resolve:secretsmanager:"
             + config["secret_arn"]
             + ":SecretString}}",

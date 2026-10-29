@@ -29,3 +29,15 @@ GitHub Actions CI/CD, 기존 서울 EC2/RDS/Valkey/Secret, 퍼블릭 IP Let’s 
 
 Git dev/main 반영, GitHub CI/CD 실제 실행 결과, RDS 연결·schema readiness와 공개 앱 health 결과를
 마지막 검증 후 여기에 추가한다. DB migration·schema/data 쓰기·seed는 아직 실행하지 않았다.
+
+## 첫 실행 확인
+
+- 로컬 변경을 dev `ae06cc1`로 commit/push하고 main `f1641be`로 이력 보존 merge/push했다.
+- [dev CI](https://github.com/Uhjinkim/erp-project/actions/runs/40857591114) 성공.
+- [첫 main 실행](https://github.com/Uhjinkim/erp-project/actions/runs/40857740358)의 backend/frontend 성공.
+  OIDC subject가 기존 name-only 예제와 달리 immutable ID를 포함해 역할 인수가 실패했다.
+  CloudTrail WebIdentityUser principal에서 실제 subject를 확인하고 정확한 owner/repo ID와 main으로
+  trust를 수정했다. wildcard나 다른 branch 허용으로 우회하지 않았다.
+- Secret provider 캐시 갱신 시 DescribeSecret AccessDenied를 발견해 지정한 두 Secret 범위에서
+  권한을 추가했다. 원문 없는 wrapper 진단·로컬 provider 전용 모드를 보완하고 환경 검사 통과.
+- 정식 IP 인증서의 `renew --dry-run --run-deploy-hooks` 성공. nginx 검사/reload hook도 실행됐다.

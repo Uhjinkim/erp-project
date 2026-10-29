@@ -329,14 +329,31 @@ def resolve_one(ref):
         if SSRF_TOKEN:
             req.add_header('X-Aws-Parameters-Secrets-Token', SSRF_TOKEN)
         try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
                 value = data.get('SecretString')
-        except (urllib.error.URLError, OSError, json.JSONDecodeError):
-            pass
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as error:
+            # Never log response bodies or input values, even when a lookup fails.
+            status = getattr(error, 'code', type(error).__name__)
+            print(f'asm-exec: local provider lookup failed ({status})', file=sys.stderr)
+            if isinstance(error, urllib.error.HTTPError):
+                try:
+                    diagnostic = json.loads(error.read())
+                    code = diagnostic.get('__type', diagnostic.get('Code', 'unknown'))
+                    if re.fullmatch(r'[A-Za-z0-9.#_-]{1,100}', str(code)):
+                        print(f'asm-exec: provider error type: {code}', file=sys.stderr)
+                    # Recognize service error categories without emitting the response body.
+                    body = json.dumps(diagnostic)
+                    for category in ['AccessDenied', 'ValidationException', 'ResourceNotFound',
+                                     'InvalidRequest', 'DecryptionFailure', 'Credentials',
+                                     'ParameterNotFound', 'Token']:
+                        if category.lower() in body.lower():
+                            print(f'asm-exec: provider error category: {category}', file=sys.stderr)
+                except (ValueError, OSError):
+                    pass
 
     # 2. Resolve via Streamable HTTP MCP
-    if not value:
+    if not value and os.environ.get('ASM_EXEC_LOCAL_ONLY') != 'true':
         value = _resolve_via_mcp(secret_name, label, region)
 
     if not value:

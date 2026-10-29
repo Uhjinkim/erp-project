@@ -3,8 +3,10 @@ name: ERP CI and production deployment
 on:
   pull_request:
     branches: [dev, main]
+    paths-ignore: ["docs/**", "**/*.md"]
   push:
     branches: [dev, main]
+    paths-ignore: ["docs/**", "**/*.md"]
   workflow_dispatch:
 
 permissions:
@@ -78,6 +80,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::610849077646:role/erp-github-deploy
           aws-region: ${{ env.AWS_REGION }}
+          retry-max-attempts: 2
       - name: Authenticate to ECR
         run: aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR_REGISTRY"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
