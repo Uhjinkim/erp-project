@@ -57,6 +57,7 @@ def environment(config, secret):
         }
     )
     # Never forward AWS credentials, loader state or unrelated host environment to Compose.
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     return {
         **{
             k: v
@@ -66,12 +67,12 @@ def environment(config, secret):
                 "HOME",
                 "PATH",
                 "XDG_RUNTIME_DIR",
-                "DOCKER_HOST",
-                "DOCKER_CONTEXT",
                 "DOCKER_CONFIG",
             }
         },
         **values,
+        "XDG_RUNTIME_DIR": runtime_dir,
+        "DOCKER_HOST": "unix://" + runtime_dir + "/docker.sock",
     }
 
 

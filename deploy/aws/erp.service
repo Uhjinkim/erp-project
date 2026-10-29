@@ -10,6 +10,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/srv/erp/current
 Environment=XDG_RUNTIME_DIR=%t
+Environment=DOCKER_HOST=unix://%t/docker.sock
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/python3 /srv/erp/current/deploy/aws/runtime.py start
 ExecStop=/usr/bin/python3 /srv/erp/current/deploy/aws/runtime.py stop

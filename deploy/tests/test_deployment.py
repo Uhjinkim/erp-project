@@ -56,6 +56,21 @@ class EnvironmentTests(unittest.TestCase):
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", env)
         self.assertNotIn("ERP_SECRET_JSON", env)
 
+    def test_temporary_registry_config_keeps_explicit_rootless_socket(self):
+        with patch.dict(
+            os.environ,
+            {
+                "XDG_RUNTIME_DIR": "/run/user/1002",
+                "DOCKER_CONFIG": "/tmp/test-only-auth",
+                "DOCKER_CONTEXT": "default",
+                "DOCKER_HOST": "unix:///var/run/docker.sock",
+            },
+        ):
+            env = runtime.environment(CONFIG, SECRET)
+        self.assertEqual(env["DOCKER_HOST"], "unix:///run/user/1002/docker.sock")
+        self.assertEqual(env["DOCKER_CONFIG"], "/tmp/test-only-auth")
+        self.assertNotIn("DOCKER_CONTEXT", env)
+
     def test_invalid_secrets_fail_without_echoing_value(self):
         for secret in [
             {},

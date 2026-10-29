@@ -103,6 +103,8 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ env.ECR_REGISTRY }}/erp/backend:${{ github.sha }}
+          cache-from: type=gha,scope=erp-backend
+          cache-to: type=gha,mode=max,scope=erp-backend
       - name: Build and push nginx/frontend
         if: steps.images.outputs.nginx == 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -113,6 +115,8 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ env.ECR_REGISTRY }}/erp/nginx:${{ github.sha }}
+          cache-from: type=gha,scope=erp-nginx
+          cache-to: type=gha,mode=max,scope=erp-nginx
       - name: Upload release and deploy using restricted SSM document
         env:
           RELEASE_SHA: ${{ github.sha }}

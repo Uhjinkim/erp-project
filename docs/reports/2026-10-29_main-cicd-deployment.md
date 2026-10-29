@@ -19,7 +19,7 @@ GitHub Actions CI/CD, 기존 서울 EC2/RDS/Valkey/Secret, 퍼블릭 IP Let’s 
 ## 검증
 
 - 기존 전체 변경: backend check/Ruff/pytest 561 passed/migration drift 없음, frontend lint/69 tests/build 통과.
-- 배포 회귀 7 tests 통과, deploy Python Ruff 통과, workflow actionlint 통과, shell syntax 통과.
+- 배포 회귀 8 tests 통과, deploy Python Ruff 통과, workflow actionlint 통과, shell syntax 통과.
 - dummy 환경변수로 AWS Compose config --quiet 통과. 로컬 Docker daemon은 꺼져 있어 새 이미지
   로컬 실행은 하지 않았으며 GitHub ARM64 빌드와 EC2에서 검증한다.
 - 개발 start-dev --check는 sandbox의 sysctl 제한 때문에 일반 실행이 실패했으나 허용된 실행에서 통과.
@@ -41,3 +41,6 @@ Git dev/main 반영, GitHub CI/CD 실제 실행 결과, RDS 연결·schema readi
 - Secret provider 캐시 갱신 시 DescribeSecret AccessDenied를 발견해 지정한 두 Secret 범위에서
   권한을 추가했다. 원문 없는 wrapper 진단·로컬 provider 전용 모드를 보완하고 환경 검사 통과.
 - 정식 IP 인증서의 `renew --dry-run --run-deploy-hooks` 성공. nginx 검사/reload hook도 실행됐다.
+- 임시 ECR DOCKER_CONFIG가 rootless context 선택을 지우는 경우를 확인하고 socket을 명시했다.
+  이 환경변수 조합에 대한 회귀 테스트를 추가했다. Provider token 0600/부모 0700과
+  root 소유 launcher/비밀 없는 설정 파일 권한을 확인하고 staging 인증서는 정리했다.

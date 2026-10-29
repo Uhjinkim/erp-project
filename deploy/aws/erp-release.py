@@ -4,6 +4,7 @@
 import fcntl
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -67,6 +68,7 @@ def main():
     ):
         raise ValueError("Expected release commit SHA and archive SHA256")
     sha, checksum = sys.argv[1:]
+    os.environ["DOCKER_HOST"] = f"unix:///run/user/{os.getuid()}/docker.sock"
     config = json.loads(Path("/etc/erp/runtime.json").read_text())
     with (BASE / "deploy.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
