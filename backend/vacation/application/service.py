@@ -2,9 +2,9 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 
-from vacation.application.dto import RequestVacationCommand, ResubmitVacationCommand
+from vacation.application.dto import RequestVacationCommand, ResubmitVacationCommand, type_to_dict
 from vacation.application.ports import LeaveBalanceGateway, WorkforceGateway
-from vacation.domain.entities import VacationHistory, VacationRequest, VacationStatus
+from vacation.domain.entities import VacationHistory, VacationRequest, VacationStatus, VacationType
 from vacation.domain.exceptions import (
     ApproverNotFoundError,
     InactiveEmployeeError,
@@ -121,10 +121,24 @@ class VacationService:
                 )
             return uow.histories.list_for_request(request_id)
 
-    def list_types(self, employee_no: int) -> list[object]:
+    def list_types(self, employee_no: int) -> list[VacationType]:
         self._ensure_active(employee_no)
         with self.unit_of_work_factory() as uow:
             return uow.types.list_active()
+
+    def list_type_balances(self, employee_no: int) -> list[dict[str, object]]:
+        """LV-001: expose the same balance policy used by submission, in one batch."""
+        types = self.list_types(employee_no)
+        balances = self.balances.remaining_for_types(employee_no, types)
+        return [
+            {
+                **type_to_dict(item),
+                "remaining_days": (
+                    str(balances[item.type_id]) if balances[item.type_id] is not None else None
+                ),
+            }
+            for item in types
+        ]
 
     def _transition(
         self,

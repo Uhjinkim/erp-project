@@ -1,8 +1,8 @@
-.stack { display: grid; gap: var(--space-4); }
+.stack { min-width: 0; grid-template-columns: minmax(0, 1fr); display: grid; gap: var(--space-4); }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .spread { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .links { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.hint { margin: 0; color: var(--color-muted); font-size: var(--font-small); }
+.hint { max-width: 72ch; margin: 0; color: var(--color-muted); font-size: var(--font-small); }
 .subtext { display: block; color: var(--color-muted); font-size: var(--font-small); font-weight: 400; }
 .nowrap { white-space: nowrap; }
 .amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -13,7 +13,7 @@
 .fullWidth { grid-column: 1 / -1; }
 .formFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: var(--space-3); }
 
-.fieldset { display: grid; gap: var(--space-3); margin: 0; border: 1px solid var(--color-border); padding: var(--space-4); }
+.fieldset { min-width: 0; display: grid; gap: var(--space-3); margin: 0; border: 1px solid var(--color-border); padding: var(--space-4); }
 .fieldset legend { padding: 0 var(--space-2); font-weight: 600; }
 .choices { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 

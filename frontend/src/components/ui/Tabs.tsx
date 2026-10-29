@@ -11,7 +11,7 @@ export function Tabs({ label, items, value, onChange, children }: {
 }) {
   const id = useId()
   const selected = items.findIndex((item) => item.value === value)
-  return <div>
+  return <div className={styles.tabGroup}>
     <div className={styles.tabs} role="tablist" aria-label={label}>
       {items.map((item, index) => <button key={item.value} id={`${id}-tab-${index}`} role="tab" type="button" aria-selected={item.value === value} aria-controls={`${id}-panel`} tabIndex={item.value === value ? 0 : -1} className={styles.tab} onClick={() => onChange(item.value)} onKeyDown={(event) => {
         let next: number

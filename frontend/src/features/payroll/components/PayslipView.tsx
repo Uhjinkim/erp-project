@@ -51,7 +51,7 @@ export function PayslipView({ statement, components, printing = false, actions }
           <dd>{statement.payment_date}</dd>
         </div>
       </dl>
-      <div className={styles.tableScroll}>
+      <div className={styles.tableScroll} role="region" aria-label="지급·공제 내역" tabIndex={0}>
         <table className={styles.payslipTable}>
           <caption className={styles.visuallyHidden}>지급·공제 내역</caption>
           <thead>

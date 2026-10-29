@@ -50,7 +50,7 @@ export function HistoryPanel({ employee, master, enabled, onChanged }: HistoryPa
         {history.data && entries.length === 0 && <EmptyState title="등록된 인사이력이 없습니다">첫 발령을 등록하면 입사일부터의 이전 기간 이력도 함께 기록합니다.</EmptyState>}
         {entries.length > 0 && (
           <Table caption="기간별 인사이력">
-            <thead><tr><th scope="col">기간</th><th scope="col">부서</th><th scope="col">직급</th><th scope="col">기본급</th><th scope="col">작업</th></tr></thead>
+            <thead><tr><th scope="col">기간</th><th scope="col">부서</th><th scope="col">직급</th><th scope="col" className={styles.amount}>기본급</th><th scope="col">작업</th></tr></thead>
             <tbody>
               {entries.map((entry) => (
                 <tr key={entry.history_id}>

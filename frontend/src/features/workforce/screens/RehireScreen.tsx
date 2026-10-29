@@ -29,7 +29,7 @@ const loadRetired = async (keyword: string): Promise<LookupRow[]> => {
 export function RehireScreen({ enabled, search, master }: { enabled: boolean; search: URLSearchParams; master: MasterData }) {
   const empNo = parseId(search.get("empNo"))
   if (empNo === null) {
-    return <EmployeeLookup title="재입사 대상 선택" description="퇴사 처리된 사원만 재입사할 수 있습니다. 재입사 시 새 사번이 발급되고 이전 사번은 재사용하지 않습니다(HR-006)." enabled={enabled} load={loadRetired} hrefFor={(row) => workforceHref("rehire", { empNo: row.emp_no })} actionLabel="재입사 처리" />
+    return <EmployeeLookup title="재입사 대상 선택" description="퇴사 처리된 사원을 검색합니다." enabled={enabled} load={loadRetired} hrefFor={(row) => workforceHref("rehire", { empNo: row.emp_no })} actionLabel="재입사 처리" />
   }
   return <RehireView empNo={empNo} enabled={enabled} master={master} />
 }
@@ -73,7 +73,7 @@ function RehireForm({ previous, master }: { previous: EmployeeDetail; master: Ma
       </Card>
       <Card title="재입사 처리">
         <form className={styles.stack} onSubmit={(event) => void submit(event)} noValidate>
-          <p className={styles.hint}>새 사번은 서버가 발급합니다. 재입사일은 마지막 퇴사일({previous.term_date}) 이후여야 하며 서버가 최종 확인합니다.</p>
+          <p className={styles.hint}>재입사일은 마지막 퇴사일({previous.term_date}) 이후여야 합니다.</p>
           {mutation.error && <Alert tone="error" title="재입사를 처리하지 못했습니다">{mutation.error}</Alert>}
           <EmploymentFormFields mode="rehire" form={form} errors={errors} master={master} disabled={mutation.pending} onChange={(next) => { setForm(next); setLocalErrors({}) }} />
           <div className={styles.formFooter}>

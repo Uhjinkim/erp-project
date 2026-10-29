@@ -1,4 +1,0 @@
-.gallery { display: grid; gap: var(--space-5); padding: var(--space-5); }
-.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-5); }
-.stack { display: grid; gap: var(--space-4); }

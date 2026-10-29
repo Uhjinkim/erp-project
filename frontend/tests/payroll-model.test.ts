@@ -64,3 +64,19 @@ describe("previous month prefill", () => {
     expect(statementFor(statements, "1", previousPeriod("2026-09"))).toBeNull()
   })
 })
+
+
+describe("payroll employee picker", () => {
+  test("creation disables the actor while read-only filters retain them", async () => {
+    const { EmployeePicker } = await import("../src/features/payroll/components/EmployeePicker")
+    const { renderToStaticMarkup } = await import("react-dom/server")
+    const { createElement } = await import("react")
+    const props = { targets, deptKey: "10", empNo: "", ownEmployeeNo: 1, onChange: () => {} }
+    const creation = renderToStaticMarkup(createElement(EmployeePicker, { ...props, mode: "create" }))
+    const filter = renderToStaticMarkup(createElement(EmployeePicker, { ...props, mode: "filter" }))
+    expect(creation).toMatch(/<option[^>]*value="1"[^>]*disabled=""/)
+    expect(creation).toContain("본인(생성 불가)")
+    expect(creation).not.toMatch(/<option[^>]*value="2"[^>]*disabled/)
+    expect(filter).not.toContain("disabled")
+  })
+})

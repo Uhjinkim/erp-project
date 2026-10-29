@@ -1,3 +1,4 @@
+import { BUSINESS_TIME_ZONE } from "../../utils/dateTime"
 import { routeHref } from "../../app/routing"
 import type { NoticeCategory, Post } from "../../types/board"
 
@@ -65,5 +66,5 @@ export function filterNoticePosts(posts: Post[], category: CategoryFilter, query
 }
 
 export function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("ko-KR")
+  return new Date(value).toLocaleString("ko-KR", { timeZone: BUSINESS_TIME_ZONE })
 }

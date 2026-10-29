@@ -1,0 +1,22 @@
+# User unit: /home/erp/.config/systemd/user/erp.service
+[Unit]
+Description=ERP release with Secrets Manager environment
+Requires=docker.service
+After=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/erp/current
+Environment=XDG_RUNTIME_DIR=%t
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /srv/erp/current/deploy/aws/runtime.py start
+ExecStop=/usr/bin/python3 /srv/erp/current/deploy/aws/runtime.py stop
+TimeoutStartSec=600
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target

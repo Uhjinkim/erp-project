@@ -41,7 +41,7 @@ export function EmploymentFormFields({ mode, form, errors, master, disabled, onC
       <fieldset className={styles.fieldset} disabled={disabled}>
         <legend>고용 정보</legend>
         <div className={styles.fieldGrid}>
-          <TextInput label="사내 이메일" type="email" required maxLength={100} value={form.email} error={errors.email} hint="중복 여부는 등록 시 서버가 확인합니다." onChange={text("email")} />
+          <TextInput label="사내 이메일" type="email" required maxLength={100} value={form.email} error={errors.email} onChange={text("email")} />
           <TextInput label={rehire ? "재입사일" : "입사일"} type="date" required value={form.hire_date} error={errors.hire_date} onChange={text("hire_date")} />
           <Select label="부서" required value={form.dept_no} error={errors.dept_no} onChange={text("dept_no")}>
             <option value="">선택</option>

@@ -1,3 +1,4 @@
+import { BUSINESS_TIME_ZONE } from "../../utils/dateTime"
 import { routeHref } from "../../app/routing"
 import type { ApprovalRequiredValues, ChangeRequestStatus } from "../../types/profile"
 
@@ -63,7 +64,7 @@ export function formatDateTime(value: string | null) {
   if (!value) return "-"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })
+  return date.toLocaleString("ko-KR", { timeZone: BUSINESS_TIME_ZONE, dateStyle: "medium", timeStyle: "short" })
 }
 
 export type ProfileEditForm = { phone: string; address: string; email: string; bank_code: string; account_no: string }

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Deploy one checksum-verified ERP main release as the rootless erp user",
+  "parameters": {
+    "ReleaseSha": {"type": "String", "allowedPattern": "^[a-f0-9]{40}$"},
+    "ArchiveSha256": {"type": "String", "allowedPattern": "^[a-f0-9]{64}$"}
+  },
+  "mainSteps": [{
+    "action": "aws:runShellScript",
+    "name": "deployERP",
+    "inputs": {
+      "timeoutSeconds": "900",
+      "runCommand": [
+        "set -eu",
+        "runuser -u erp -- env HOME=/home/erp PATH=/usr/local/bin:/usr/bin:/bin XDG_RUNTIME_DIR=/run/user/1002 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1002/bus /usr/local/bin/erp-release '{{ ReleaseSha }}' '{{ ArchiveSha256 }}'"
+      ]
+    }
+  }]
+}

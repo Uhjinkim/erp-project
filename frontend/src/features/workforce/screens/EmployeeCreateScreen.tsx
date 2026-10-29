@@ -32,7 +32,6 @@ export function EmployeeCreateScreen({ master }: { master: MasterData }) {
   return (
     <Card title="신규 사원 등록" actions={<a href={workforceHref("employee-list")}>사원 목록</a>}>
       <form className={styles.stack} onSubmit={(event) => void submit(event)} noValidate>
-        <p className={styles.hint}>사번은 서버가 자동 발급합니다. 등록 후 사번은 변경할 수 없습니다(HR-007).</p>
         {mutation.error && <Alert tone="error" title="등록하지 못했습니다">{mutation.error}</Alert>}
         <EmploymentFormFields mode="create" form={form} errors={errors} master={master} disabled={mutation.pending} onChange={(next) => { setForm(next); setLocalErrors({}) }} />
         <div className={styles.formFooter}>

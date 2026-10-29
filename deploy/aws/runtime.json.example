@@ -1,0 +1,13 @@
+{
+  "region": "ap-northeast-2",
+  "registry": "610849077646.dkr.ecr.ap-northeast-2.amazonaws.com",
+  "release_bucket": "erp-releases-610849077646-ap-northeast-2",
+  "secret_arn": "arn:aws:secretsmanager:ap-northeast-2:610849077646:secret:SecretManager-StO81K",
+  "django_secret_arn": "arn:aws:secretsmanager:ap-northeast-2:610849077646:secret:erp/production/django-uPFC79",
+  "public_host": "13.125.22.237",
+  "db_host": "erp-postgres.c7sqmawwc87r.ap-northeast-2.rds.amazonaws.com",
+  "db_name": "erp-db",
+  "db_user": "erp",
+  "redis_url": "rediss://erp-cache-cluster-0001-001.erp-cache-cluster.zcul17.apn2.cache.amazonaws.com:6379/0",
+  "rds_ca_file": "/etc/erp/rds-global-bundle.pem"
+}

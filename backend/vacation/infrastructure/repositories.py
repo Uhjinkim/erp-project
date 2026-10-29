@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 from django.db import transaction
 
-from vacation.domain.entities import VacationHistory, VacationRequest
+from shared.infrastructure.reference_cache import reference_list
+from vacation.domain.entities import VacationHistory, VacationRequest, VacationType
 from vacation.domain.exceptions import VacationRequestNotFoundError, VacationTypeNotFoundError
 from vacation.domain.repositories import (
     VacationHistoryRepository,
@@ -99,7 +102,21 @@ class DjangoVacationTypeRepository(VacationTypeRepository):
             raise VacationTypeNotFoundError("휴가 유형을 찾을 수 없습니다.") from exc
 
     def list_active(self):
-        return [type_to_entity(model) for model in LeaveTypeModel.objects.order_by("type_id")]
+        def load() -> list:
+            return [
+                {
+                    "type_id": model.type_id,
+                    "type_name": model.type_name,
+                    "is_paid": model.is_paid,
+                    "deduct_days": str(model.deduct_days),
+                }
+                for model in LeaveTypeModel.objects.order_by("type_id")
+            ]
+
+        return [
+            VacationType(**{**row, "deduct_days": Decimal(row["deduct_days"])})
+            for row in reference_list("vacation:types", load)
+        ]
 
 
 class DjangoVacationUnitOfWork(VacationUnitOfWork):

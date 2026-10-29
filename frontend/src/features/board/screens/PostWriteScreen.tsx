@@ -84,7 +84,7 @@ export function PostWriteScreen({ enabled }: { enabled: boolean }) {
         <option value="일반">일반글</option>
         <option value="공지">공지</option>
       </Select>}
-      {writingNotice && <Select label="공지 분류" required value={category} error={errors.notice_category?.[0]} disabled={saving} onChange={(event) => setCategory(event.target.value as NoticeCategory)} hint="작성 권한이 있는 분류만 표시됩니다.">
+      {writingNotice && <Select label="공지 분류" required value={category} error={errors.notice_category?.[0]} disabled={saving} onChange={(event) => setCategory(event.target.value as NoticeCategory)}>
         {eligible.map((code) => <option key={code} value={code}>{noticeCategoryLabels[code]}</option>)}
       </Select>}
       <TextInput label="제목" required maxLength={100} value={title} error={errors.title?.[0]} disabled={saving} onChange={(event) => setTitle(event.target.value)} hint="100자 이내" />

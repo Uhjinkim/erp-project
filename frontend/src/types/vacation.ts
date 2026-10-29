@@ -1,6 +1,13 @@
 export type VacationStatus = "대기" | "승인" | "반려" | "취소" | "회수"
 export type VacationDecimal = string | number
-export type VacationType = { type_id: string; type_name: string; is_paid: boolean; deduct_days: VacationDecimal }
+export type VacationType = {
+  balance_type_id?: string
+  remaining_days?: string | null
+  type_id: string
+  type_name: string
+  is_paid: boolean
+  deduct_days: VacationDecimal
+}
 export type VacationRequest = {
   request_id: number
   employee_no: number

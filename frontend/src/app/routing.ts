@@ -1,11 +1,14 @@
+import type { LucideIcon } from "lucide-react"
+
 export type ModuleRegistration = {
   id: string
   label: string
-  icon: string
+  icon: LucideIcon
   entry: string
   // 지정하면 이 역할이 활성인 사용자에게만 메뉴를 보이고 화면을 연다. 서버 권한 검사는 별도로 유지한다.
   requiredRole?: string
-  screens: { id: string; title: string }[]
+  allowSuperuser?: boolean
+  screens: { id: string; title: string; icon: LucideIcon; menu?: boolean }[]
 }
 
 export type Route = { moduleId: string; screenId: string; search?: string }

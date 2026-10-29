@@ -54,7 +54,7 @@ function ReviewForm({ request, onStale }: { request: PersonalInfoChangeRequest; 
       </Card>
       <Card title="변경 전·후 비교">
         <ChangeComparison request={request} revealAccount={processable} />
-        {processable && <p className={styles.hint}>승인하면 요청 값이 인사정보에 바로 반영됩니다. 현재 계좌는 가려서 표시합니다.</p>}
+        {processable && <p className={styles.hint}>승인하면 요청 내용이 인사정보에 반영됩니다.</p>}
       </Card>
       {mutation.error && <Alert tone="error" title="처리하지 못했습니다">{mutation.error} 최신 상태를 다시 불러왔습니다.</Alert>}
       {processable

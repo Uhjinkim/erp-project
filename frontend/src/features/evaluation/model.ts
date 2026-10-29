@@ -1,3 +1,4 @@
+import { BUSINESS_TIME_ZONE, businessToday } from "../../utils/dateTime"
 import { routeHref } from "../../app/routing"
 import type { EvaluationAction, EvaluationHistoryEntry, EvaluationStatus } from "../../types/evaluation"
 
@@ -32,17 +33,17 @@ export const ACTION_LABELS: Record<EvaluationAction, string> = {
 
 /** Years a new evaluation may target: this year and last year (backend rule). */
 export function creatableYears() {
-  const year = new Date().getFullYear()
+  const year = Number(businessToday().slice(0, 4))
   return [String(year), String(year - 1)]
 }
 
 export function filterYears() {
-  const year = new Date().getFullYear()
+  const year = Number(businessToday().slice(0, 4))
   return [String(year), String(year - 1), String(year - 2)]
 }
 
 export function formatDateTime(value: string | null) {
-  return value ? new Date(value).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }) : "-"
+  return value ? new Date(value).toLocaleString("ko-KR", { timeZone: BUSINESS_TIME_ZONE, dateStyle: "medium", timeStyle: "short" }) : "-"
 }
 
 /** Whoever wrote the evaluation leaves HR actions to another HR manager (guidance only). */

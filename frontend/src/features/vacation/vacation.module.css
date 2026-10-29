@@ -1,9 +1,9 @@
-.stack { display: grid; gap: var(--space-4); min-width: 0; }
+.stack { min-width: 0; grid-template-columns: minmax(0, 1fr); display: grid; gap: var(--space-4); min-width: 0; }
 .workspace { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: var(--space-5); align-items: start; }
 .row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
-.hint { color: var(--color-muted); font-size: var(--font-small); }
+.hint { max-width: 72ch; color: var(--color-muted); font-size: var(--font-small); }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-border); background: var(--color-surface); }
 .metrics > div { display: grid; gap: var(--space-3); padding: var(--space-5); border-right: 1px solid var(--color-border); }
 .metrics > div:last-child { border-right: 0; }
@@ -17,3 +17,6 @@
 .reason { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .workspace { grid-template-columns: 1fr; } .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .fields, .filters { grid-template-columns: 1fr; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metrics > div { padding: var(--space-4); border-bottom: 1px solid var(--color-border); } }
+
+.balance { min-width: 0; display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: 8px; }
+.balance p { margin: 0; }

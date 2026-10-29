@@ -85,7 +85,6 @@ function AssignForm({ employee, assignments, master, onDone }: { employee: Emplo
         </Select>
         <Button type="submit" pending={mutation.pending} disabled={!roleCode}>부여</Button>
       </form>
-      <p className={styles.hint}>휴가 승인 인사담당자 등 인원 제한이 있는 역할은 서버가 확인합니다. 여러 역할의 권한은 각각 독립적으로 적용됩니다.</p>
       {mutation.error && <Alert tone="error">{mutation.error}</Alert>}
     </Card>
   )

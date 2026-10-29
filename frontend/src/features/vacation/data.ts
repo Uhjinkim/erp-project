@@ -30,7 +30,7 @@ export async function loadVacationData(employeeNo: number, screen: string, reque
       data.errors[key] = error instanceof Error ? error : new Error("데이터를 불러오지 못했습니다.")
     }))
   }
-  load("types", api.types(employeeNo))
+  load("types", api.types(employeeNo, screen === "leave-apply" || screen === "leave-resubmit"))
   if (screen === "leave-mine" || screen === "leave-resubmit" || screen === "leave-detail") load("mine", api.mine(employeeNo))
   if (screen === "leave-queue" || screen === "leave-approve" || screen === "leave-recall" || screen === "leave-detail") load("approvals", api.approvals(employeeNo))
   if (screen === "leave-detail" && requestId) load("history", api.history(employeeNo, requestId))

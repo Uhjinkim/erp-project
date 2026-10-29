@@ -48,7 +48,6 @@ export function MyProfileScreen({ employee, pending, search, onSubmitted }: MyPr
           { key: "gender", label: "성별", value: employee.gender ? genderLabels[employee.gender] ?? employee.gender : "미등록" },
           { key: "extension", label: "내선번호", value: employee.extension_no ?? "미등록" },
         ]} />
-        <p className={styles.hint}>연락처·주소·사내 이메일·급여계좌는 &lsquo;수정&rsquo;에서 고치면 인사관리자 승인 후 반영됩니다(HR-002). 부서·직급·내선번호 등 인사정보 변경은 인사관리자에게 요청하세요.</p>
       </Card>
 
       <div className={styles.grid}>

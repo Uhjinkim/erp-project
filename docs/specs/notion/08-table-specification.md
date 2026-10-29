@@ -2,7 +2,7 @@
 
 - Notion 원문: <https://app.notion.com/p/3d78eced448d8124b3b4d00cd2c0b5f3>
 - 원문 최종 수정: 2026-10-12
-- 저장소 코드 확인: 2026-10-14 (dev 4f77219 구현 대조; Notion 재조회 없음)
+- 저장소 코드 확인: 2026-10-28 (dev 5dc4415 구현 대조; Notion 재조회 없음)
 - 대상: 공유 개발 PostgreSQL `erp_dev.public`의 ERD 29개 테이블
 - 기준 자료: [ERP 개발 DB 스키마](../../../erp_dev.md), `backend/accounts`, `backend/workforce`, `backend/vacation` 모델과 마이그레이션
 - 용도: ERD의 테이블·컬럼·관계를 구현 관점에서 찾아보기 위한 문서
@@ -262,6 +262,29 @@ PostgreSQL JSON 표현 및 실제 적용은 배포 확인과 구분한다. 기�
 | `processed_at` | `timestamp` |  | 처리 시각 |
 | `reject_reason` | `varchar(255)` |  | 반려 사유 |
 
+### `personal_info_change_requests` — 현재 개인정보 수정 요청 구현
+
+workforce 0004의 신규 테이블이다. 위 `employee_change_requests`를 대체·삭제한 것으로 해석하지
+않는다(HR-01 미결). 아래는 코드 정의이며 대상 RDS 스키마를 확인한 결과가 아니다.
+
+| 컬럼 | Django 타입·조건 | 의미 |
+| --- | --- | --- |
+| request_id | BigAutoField PK | 요청 ID |
+| emp_no | ForeignKey employees, RESTRICT | 요청자 |
+| previous_email, requested_email | nullable varchar(100) | 이메일 전후 값 |
+| previous_bank_code, requested_bank_code | nullable varchar(20) | 은행 전후 값 |
+| previous_account_no, requested_account_no | nullable varchar(100) | 계좌 전후 값; 민감정보 |
+| previous_phone, requested_phone | nullable varchar(20), 0007 | 연락처 전후 값 |
+| previous_address, requested_address | nullable varchar(255), 0007 | 주소 전후 값 |
+| status | varchar(10), 기본 대기 | 대기·승인·반려·취소 |
+| requested_at | DateTimeField | 요청 시각 |
+| processed_by_emp_no | nullable FK employees, RESTRICT | 처리자 |
+| processed_at | nullable DateTimeField | 처리 시각 |
+| reject_reason | nullable varchar(500) | 반려 사유 |
+
+0007은 네 연락처·주소 컬럼을 추가한다. 코드 전환 전에 대상 DB에 적용해야 하며,
+이번 작업에서는 적용하지 않았다. `(emp_no, status)` 인덱스와 요청시각·ID 내림차순 정렬을 사용한다.
+
 ### `roles` — 업무 역할 코드
 
 | 컬럼 | 타입 | 키·참조 | 설명 |
@@ -295,6 +318,9 @@ PostgreSQL JSON 표현 및 실제 적용은 배포 확인과 구분한다. 기�
 | `type_name` | `varchar(50)` | UK | 휴가 유형명 |
 | `is_paid` | `boolean` |  | 유급 여부 |
 | `deduct_days` | `numeric(3,2)` |  | 잔여일수 차감 단위 |
+
+2026-10-29 사용자 확정: `HALF`는 `ANNUAL` 잔여를 공유하는 신청 유형이다.
+별도의 반차 잔여 행을 요구하지 않는다. 스키마 변경 없이 도메인 잔여 유형 매핑으로 적용한다.
 
 ### `leave_balances` — 사원별 휴가 잔여일수
 

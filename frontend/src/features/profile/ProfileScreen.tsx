@@ -19,7 +19,7 @@ export function ProfileScreen({ route, user, enabled }: ProfileScreenProps) {
   // 조회 조건이 바뀌면 화면을 다시 마운트해 필터·입력 상태를 URL과 맞춘다.
   const key = `${route.screenId}?${route.search ?? ""}`
   if (!enabled) return <EmptyState title="백엔드 연결 후 개인정보를 불러옵니다" />
-  // 처리함은 인사관리자뿐 아니라 HR 요청의 처리자로 지정된 부서장·superuser도 사용한다. 대상은 서버가 거른다.
+  // 현재 처리자 정책은 HR_MANAGER 또는 superuser다. 개별 요청의 처리 가능 여부는 서버가 거른다.
   if (route.screenId === "change-queue") return <ChangeQueueScreen key={key} enabled={enabled} search={search} />
   if (route.screenId === "change-review") return <ChangeReviewScreen key={key} enabled={enabled} search={search} />
   if (!selfScreens.includes(route.screenId)) return <EmptyState title="등록되지 않은 내 정보 화면입니다" />

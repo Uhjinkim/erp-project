@@ -1,5 +1,11 @@
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from django.test import override_settings
 from redis.exceptions import AuthenticationError, TimeoutError
 from rest_framework.test import APIClient
@@ -127,3 +133,26 @@ def test_production_does_not_accept_development_employee_header() -> None:
 
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
+
+
+@pytest.mark.parametrize("configured,expected", [(None, 10.0), ("2.5", 2.5)])
+def test_development_health_timeout_default_and_override(configured, expected) -> None:
+    isolated_env = {
+        **os.environ,
+        "DJANGO_SETTINGS_MODULE": "config.settings.development",
+        "DJANGO_ENV_FILE": "/nonexistent/erp-health-test-env",
+        "DEVELOPMENT_OFFLINE_MODE": "true",
+    }
+    isolated_env.pop("HEALTH_CHECK_TIMEOUT_SECONDS", None)
+    if configured is not None:
+        isolated_env["HEALTH_CHECK_TIMEOUT_SECONDS"] = configured
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import json
+from django.conf import settings
+print(json.dumps(settings.HEALTH_CHECK_TIMEOUT_SECONDS))
+"""],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=isolated_env, capture_output=True, text=True, check=True,
+    )
+    assert json.loads(result.stdout) == expected

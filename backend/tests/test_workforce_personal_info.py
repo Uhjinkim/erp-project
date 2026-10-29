@@ -526,7 +526,7 @@ def test_unrelated_employee_gets_404_for_processing(staff: User) -> None:
 
 
 @pytest.mark.django_db
-def test_processable_list_resolves_processor_once_per_requester(manager: User) -> None:
+def test_processable_list_query_count_does_not_grow_per_requester(manager: User) -> None:
     def count_queries(total: int) -> int:
         for index in range(total):
             submit_account_change(create_user(5000 + total * 100 + index))
@@ -541,8 +541,9 @@ def test_processable_list_resolves_processor_once_per_requester(manager: User) -
     PersonalInfoChangeRequestModel.objects.all().delete()
     many = count_queries(10)
 
-    # 요청자당 처리자 판정은 1회(역할 조회 1건)로 끝나고, 같은 판정을 두 번 하지 않는다.
-    assert many - few <= 8
+    # 요청자·부서장·역할을 일괄 조회하므로 서로 다른 요청자가 늘어도 질의 수는 일정하다.
+    assert many == few
+    assert many <= 5
 
 
 def login_status(email: str) -> int:

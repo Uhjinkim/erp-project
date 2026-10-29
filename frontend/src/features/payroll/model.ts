@@ -1,3 +1,4 @@
+import { businessToday } from "../../utils/dateTime"
 import type { CurrentUser } from "../../types/auth"
 import type { PayrollItem, PayrollStatement, PayrollStatus, PayrollTargetEmployee } from "../../types/payroll"
 
@@ -9,11 +10,12 @@ export type PeriodSummary = { period: string; drafts: number; confirmed: number;
 export const NO_DEPARTMENT = "none"
 
 export function isPayrollManager(user: CurrentUser): boolean {
-  return user.is_superuser || user.roles.includes("PAYROLL_MANAGER")
+  // 급여 서비스는 슈퍼유저 여부와 관계없이 활성 급여담당자 역할을 검사한다.
+  return user.roles.includes("PAYROLL_MANAGER")
 }
 
 export function currentPeriod(now = new Date()): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  return businessToday(now).slice(0, 7)
 }
 
 export function periodKey(statement: Pick<PayrollStatement, "year" | "month">): string {

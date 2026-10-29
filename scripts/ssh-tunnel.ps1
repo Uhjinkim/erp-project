@@ -1,5 +1,6 @@
 param(
-    [string]$EnvFile = (Join-Path (Split-Path -Parent $PSScriptRoot) ".env")
+    [string]$EnvFile = (Join-Path (Split-Path -Parent $PSScriptRoot) ".env"),
+    [switch]$Diagnostic
 )
 
 $ErrorActionPreference = "Stop"
@@ -126,6 +127,15 @@ $sshArguments = @(
     "-o", "ServerAliveCountMax=3",
     "-p", $config.SSH_PORT
 )
+
+if ($Diagnostic) {
+    $diagnosticDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("erp-ssh-diagnostic-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $diagnosticDirectory | Out-Null
+    $diagnosticLog = Join-Path $diagnosticDirectory "ssh.log"
+    ("SSH diagnostic started at " + [DateTime]::UtcNow.ToString("o")) | Set-Content -LiteralPath $diagnosticLog -Encoding utf8
+    $sshArguments += @("-vv", "-E", $diagnosticLog)
+    Write-Host "SSH diagnostic log: $diagnosticLog"
+}
 
 if ($config.SSH_IDENTITY_FILE) {
     $sshArguments += @("-i", $config.SSH_IDENTITY_FILE)

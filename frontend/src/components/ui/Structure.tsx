@@ -19,5 +19,5 @@ export function DetailList({ items }: { items: { key: string; label: string; val
 }
 
 export function Table({ caption, children, ...props }: TableHTMLAttributes<HTMLTableElement> & { caption: string }) {
-  return <div className={styles.tableWrap}><table {...props} className={styles.table}><caption>{caption}</caption>{children}</table></div>
+  return <div className={styles.tableWrap} role="region" aria-label={caption} tabIndex={0}><table {...props} className={styles.table}><caption>{caption}</caption>{children}</table></div>
 }

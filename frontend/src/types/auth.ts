@@ -13,6 +13,7 @@ export type CurrentUser = {
   email: string
   is_staff: boolean
   is_superuser: boolean
+  is_department_head?: boolean
   employee: CurrentEmployee | null
   roles: string[]
 }

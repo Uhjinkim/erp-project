@@ -72,6 +72,14 @@ class VacationTypeListView(VacationAPIView):
     def get(self, request: Request) -> Response:
         try:
             employee_no = self.employee_no(request)
+            include_balance = request.query_params.get("include_balance", "false")
+            if include_balance not in {"true", "false"}:
+                return Response(
+                    {"include_balance": ["true 또는 false를 입력하세요."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if include_balance == "true":
+                return Response(self.service.list_type_balances(employee_no))
             return Response([type_to_dict(item) for item in self.service.list_types(employee_no)])
         except VacationError as error:
             return self.error_response(error)

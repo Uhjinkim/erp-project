@@ -19,7 +19,6 @@ export function EmployeeListScreen({ enabled, search, master }: ListProps) {
   return (
     <div className={styles.stack}>
       <div className={styles.spread}>
-        <p className={styles.hint}>인사관리자 전용 조회입니다(HR-001, HR-005). 검색 조건은 서버 조회에 그대로 전달합니다.</p>
         <a href={workforceHref("employee-create")}>신규 사원 등록</a>
       </div>
       <Tabs label="사원 조회 구분" items={views} value={view} onChange={(value) => { window.location.hash = workforceHref("employee-list", { view: value === "retired" ? "retired" : undefined }) }}>

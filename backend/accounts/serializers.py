@@ -5,11 +5,13 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.infrastructure.workforce_gateway import hydrate_session_employee
 from accounts.models import User
 from workforce.application.services import (
     HR_MANAGER_ROLE,
     employee_has_role,
     get_employee_profile,
+    is_department_head,
 )
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
 from workforce.infrastructure.models import Employee
@@ -27,7 +29,8 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("이메일 또는 비밀번호가 올바르지 않습니다.")
         if not user.is_active:
             raise serializers.ValidationError("비활성화된 계정입니다.")
-        if user.employee is not None and not user.employee.is_active_employee:
+        employee = hydrate_session_employee(user)
+        if employee is not None and not employee.is_active_employee:
             raise serializers.ValidationError("재직 중인 사원만 로그인할 수 있습니다.")
         attrs["user"] = user
         return attrs
@@ -36,15 +39,25 @@ class LoginSerializer(serializers.Serializer):
 class CurrentUserSerializer(serializers.ModelSerializer):
     employee = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
+    is_department_head = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "is_staff", "is_superuser", "employee", "roles"]
+        fields = [
+            "id", "email", "is_staff", "is_superuser", "employee", "roles", "is_department_head",
+        ]
+
+    def get_is_department_head(self, user: User) -> bool:
+        return user.employee_id is not None and is_department_head(
+            user.employee_id, DjangoWorkforceQueryGateway(employee=user.employee)
+        )
 
     def get_employee(self, user: User) -> dict[str, object] | None:
         if user.employee_id is None:
             return None
-        profile = get_employee_profile(user.employee_id, DjangoWorkforceQueryGateway())
+        profile = get_employee_profile(
+            user.employee_id, DjangoWorkforceQueryGateway(employee=user.employee)
+        )
         if profile is None:
             return None
         data = asdict(profile)

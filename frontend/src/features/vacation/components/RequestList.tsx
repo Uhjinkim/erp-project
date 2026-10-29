@@ -46,7 +46,7 @@ export function RequestList({ items, types, employeeNo, search, screen, href, on
       </form>
     </Card>
     <Card title={`${screen === "leave-mine" || screen === "leave-resubmit" ? "내 신청" : "내 승인 대상"} · ${visible.length}건`}>
-      {rows.length === 0 ? <EmptyState title={items.length ? "조건에 맞는 신청이 없습니다" : "표시할 신청이 없습니다"}>조회된 목록 안에서 검색합니다. 승인 대상은 서버가 지정된 승인자 기준으로 반환합니다.</EmptyState> : <Table caption="휴가 신청 목록">
+      {rows.length === 0 ? <EmptyState title={items.length ? "조건에 맞는 신청이 없습니다" : "표시할 신청이 없습니다"} /> : <Table caption="휴가 신청 목록">
         <thead><tr><th scope="col"><Button variant="ghost" size="small" onClick={() => { const query = new URLSearchParams(search)
           query.set("order", current.get("order") === "asc" ? "desc" : "asc")
           window.location.hash = href(screen, undefined, query)

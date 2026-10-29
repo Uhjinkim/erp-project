@@ -9,8 +9,13 @@ export function requestVacation<T>(path: string, employeeNo: number, options: Re
   return requestJson<T>(`/api/vacations/${path}`, { ...options, headers })
 }
 
-export const listVacationTypes = (employeeNo: number) =>
-  requestVacation<VacationType[]>("types/", employeeNo)
+export async function listVacationTypes(employeeNo: number, includeBalance = false) {
+  const types = await requestVacation<VacationType[]>(includeBalance ? "types/?include_balance=true" : "types/", employeeNo)
+  if (includeBalance && types.some((type) => type.remaining_days === undefined)) {
+    throw new Error("서버 응답에 잔여일수가 없습니다. 백엔드에 최신 변경이 반영되었는지 확인해 주세요.")
+  }
+  return types
+}
 
 export const listMyVacations = (employeeNo: number) =>
   requestVacation<VacationRequest[]>("requests/", employeeNo)

@@ -1,5 +1,10 @@
 # 프론트엔드 화면·기능 모듈 배정 및 구현 안내서
 
+> 2026-10-29 배포 계약: 앱 내 공통 컴포넌트 전시·연결 상태 화면과 health 폴링을 제거했다.
+> 아래 초기 배정의 전시·연결 UI 항목은 과거 설계이며 현재 계약은
+> [공통 토대 계약](./frontend-foundation-contracts.md)과
+> [역할별 검수 보고서](../reports/2026-10-29_role-browser-release-review.md)를 따른다.
+
 - 작성일: 2026-10-13
 - 기준 브랜치: `dev`
 - 문서 상태: 구현 전 작업 계획. 아래 경로·컴포넌트·계약은 제안이며 실제 구현 완료를 의미하지 않는다.
@@ -60,8 +65,8 @@
 | --- | --- | --- | --- |
 | F0 공통 토대 | 토큰, 공통 UI, 셸, 인증 상태, 라우팅 조립, 공통 오류·연결 처리 | `app/`, `components/ui/`, `components/patterns/`, `components/layout/`, `styles/`, 앱 진입점·전역 스타일·공통 client·auth 타입 | 기능 팀은 공용 파일을 직접 수정하지 않고 변경 요청을 제출 |
 | F1 홈 | 사원 홈·부서장 홈의 카드 조립과 집계 표시 | `features/home/` | 카드 데이터는 각 모듈의 명시적 조회 계약으로 받음 |
-| F2 내 정보·변경 요청 | 본인 정보, 직접 수정, 승인형 변경과 HR 처리 | `features/profile/`, `api/profile.ts`, `types/profile.ts` | 사원·조직 관리와 사원 타입 소유권 분리 필요 |
-| F3 사원·조직 | 사원 등록·상세·퇴사·재입사·역할·부서·직급 | `features/workforce/`, `api/workforce.ts`, `types/workforce.ts` | 계정 CRUD는 F8, 본인 변경 요청은 F2 |
+| F2 내 정보·수정 요청 | 본인 정보, 수정 요청과 HR 처리 | `features/profile/`, `api/profile.ts`, `types/profile.ts` | 사원·조직 관리와 사원 타입 소유권 분리 필요 |
+| F3 사원·조직 | HR_MANAGER 또는 superuser 메뉴; 사원 등록·상세·퇴사·재입사·역할·부서·직급 | `features/workforce/`, `api/workforce.ts`, `types/workforce.ts` | 계정 CRUD는 F8, 본인 변경 요청은 F2 |
 | F4 휴가 | 신청·취소·승인·반려·회수·재신청·이력 | `features/vacation/`, `api/vacation.ts`, `types/vacation.ts` | App에서 휴가를 분리하는 최초 이관은 F0와 순차 작업 |
 | F5 게시판 | 일반글·공지 목록·상세·작성·수정·삭제 | `features/board/`, `api/board.ts`, `types/board.ts` | 공지 권한·분류는 서버 기준, 댓글은 범위 별도 확인 |
 | F6 인사평가 | 팀 대상·작성·관리·확정·본인 결과 | `features/evaluation/`, `api/evaluation.ts`, `types/evaluation.ts` | 사원 전체 목록을 업무 대상 조회 대신 사용하지 않음 |
@@ -92,9 +97,9 @@
 | --- | --- | --- | --- |
 | F0 | `login` 로그인; `session` 세션 만료·접근 제한 | 로그인 폼, 인증 대기·만료·403 상태 | 세션·CSRF 유지, 권한 없음과 만료 구분 |
 | F1 | `home` 사원 홈; `manager-home` 부서장 홈 | 개인 업무 카드, 팀 승인·평가 요약 | 대시보드 전용 집계·읽지 않은 공지·일정 API는 별도 확인 |
-| F2 | `my-profile` 내 인사정보; `contact-edit` 연락처·주소 수정 | 본인 정보 요약, 연락처 폼 | FN-HR-001·002, HR-001·002 |
-| F2 | `change-request` 민감정보 변경 요청; `change-history` 내 요청 이력 | 변경 요청 폼·확인 단계, 요청 목록·취소 | FN-HR-003·005·011, 원문 계좌 노출 방지 |
-| F2 | `change-queue` 개인정보 처리함; `change-review` 승인·반려 | 처리 목록, 전후 비교·처리 폼 | FN-HR-004, HR-01~03 미해결 사항 확인 |
+| F2 | `my-profile` 내 인사정보·수정 모드 | 본인 정보 요약, 수정완료 후 승인 요청 | FN-HR-001·002, HR-001·002 |
+| F2 | `change-history` 내 수정 요청 이력 | 요청 목록·취소; 요청 폼은 my-profile로 통합 | FN-HR-003·005·011, 원문 계좌 노출 방지 |
+| F2 | `change-queue` 개인정보 수정 요청 처리함; `change-review` 개인정보 변경 승인·반려 | 처리 목록, 전후 비교·처리 폼 | FN-HR-004, HR-01~03 미해결 사항 확인 |
 | F3 | `employee-list` 사원 목록; `employee-detail` 상세·인사 이력 | 사원 목록, 상세 탭·발령 이력 | HR-001, FN-HR-008·010; 일반 공개 디렉터리로 확정하지 않음 |
 | F3 | `employee-create` 신규 등록; `retire` 퇴사 확인; `rehire` 재입사 | 등록 폼, 퇴사 확인, 재입사 폼 | FN-HR-006~009; 전용 처리 API·원자성 확인 |
 | F3 | `role-grant` 역할 부여·회수; `org` 부서·직급 관리 | 역할 이력·편집, 조직 목록·편집 | 복수 역할·사원 연결, 계정 편집 화면은 F8 |
@@ -280,7 +285,7 @@ frontend/src/
 
 - **F1 홈**: 각 카드의 공급 API·갱신 시점·실패 처리와 이동 대상 지정. 특정 카드 조회가 실패해도
   다른 카드가 사라지지 않게 한다. 잔여일수·읽지 않은 공지·팀 일정 수치를 fixture로 출시하지 않는다.
-- **F2 내 정보**: 직접 수정과 승인형 변경 필드를 구분하고 취소·승인·반려 후 다시 조회한다.
+- **F2 내 정보**: 연락처·주소·이메일·급여계좌를 수정 요청으로 제출하고 취소·승인·반려 후 다시 조회한다.
   기본 목록·완료 이력은 계좌를 마스킹한다. HR-01~03 결정 대기 범위를 카드에 적는다.
 - **F3 사원·조직**: 일반 사원과 HR 관리자의 조회 범위를 구분한다. 퇴사·재입사·발령은 서버의
   전용 처리 계약을 확인하며 프론트의 여러 PATCH로 업무 트랜잭션을 대체하지 않는다.
@@ -373,9 +378,9 @@ Vite와 합성 응답을 사용할 수 있다. 공유 DB·Redis를 테스트 준
 것으로 처리하지 않는다.
 
 
-## 2026-10-14 구현 통합 현황
+## 구현 통합 현황 · 2026-10-28 갱신
 
-이 안내서의 Graphite 화면 분할은 초기 배정 기준이다. 현재 코드에서 profile 6개, workforce 7개,
+이 안내서의 Graphite 화면 분할은 초기 배정 기준이다. 현재 코드에서 profile 4개, workforce 7개,
 휴가 7개, 게시판 3개, 평가 4개, 급여 5개 업무 화면을 모듈 공개 진입점으로 연결했다.
 게시판은 2026-10-14 기여 기록과 registration에 따라 공지·일반·작성 메뉴로 나뉘며 글 보기는
 목록의 postId 상태다. 이전 board-detail/notice-write를 독립 메뉴의 미구현 과제로 다시 배정하지 않는다.

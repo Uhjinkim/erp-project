@@ -78,8 +78,8 @@ function RetireForm({ employee, onDone }: { employee: EmployeeDetail; onDone: (e
       <Card title="퇴사 처리">
         <form className={styles.stack} onSubmit={review} noValidate>
           <Alert tone="warning" title="처리 후 되돌릴 수 없습니다">
-            퇴사 처리 후 해당 사원은 로그인과 ERP 기능을 이용할 수 없고 새 휴가를 신청할 수 없습니다(HR-004, HR-009).
-            인사이력·역할·평가·급여 기록은 삭제하지 않고 보존합니다(HR-005).
+            퇴사 처리 후 해당 사원은 로그인과 ERP 기능을 이용할 수 없고 새 휴가를 신청할 수 없습니다.
+            인사이력·역할·평가·급여 기록은 삭제하지 않고 보존합니다.
           </Alert>
           {mutation.error && <Alert tone="error" title="퇴사 처리를 완료하지 못했습니다">{mutation.error}</Alert>}
           <TextInput label="퇴사일" type="date" required min={employee.hire_date} max={localToday()} value={termDate} error={localError || firstFieldErrors(mutation.fieldErrors).term_date} hint="입사일 이후, 오늘 또는 이전 날짜만 지정할 수 있습니다." onChange={(event) => setTermDate(event.target.value)} />

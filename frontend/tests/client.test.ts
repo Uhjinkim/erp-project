@@ -57,3 +57,24 @@ describe("shared API transport", () => {
     await expect(requestJson("/api/example/")).rejects.toMatchObject({ unavailable: true })
   })
 })
+
+
+describe("vacation balance response contract", () => {
+  test("balance requests keep zero and unrestricted values and use the opt-in URL", async () => {
+    const { listVacationTypes } = await import("../src/api/vacation")
+    const types = [
+      { type_id: "ANNUAL", remaining_days: "0" },
+      { type_id: "FREE", remaining_days: null },
+    ]
+    respond(200, types)
+    expect(await listVacationTypes(1001, true)).toEqual(types)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].path).toBe("/api/vacations/types/?include_balance=true")
+  })
+  test("an old backend response fails explicitly instead of looking like a valid balance", async () => {
+    const { listVacationTypes } = await import("../src/api/vacation")
+    respond(200, [{ type_id: "ANNUAL" }])
+    await expect(listVacationTypes(1001, true)).rejects.toThrow("서버 응답에 잔여일수가 없습니다")
+    expect(await listVacationTypes(1001)).toEqual([{ type_id: "ANNUAL" }])
+  })
+})

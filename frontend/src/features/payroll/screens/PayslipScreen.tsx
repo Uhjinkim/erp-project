@@ -46,7 +46,7 @@ export function PayslipScreen({ enabled }: { enabled: boolean }) {
             <tr>
               <th scope="col">정산월</th>
               <th scope="col">지급일</th>
-              <th scope="col">차인지급액</th>
+              <th scope="col" className={styles.amount}>차인지급액</th>
               <th scope="col"><span className={styles.visuallyHidden}>선택</span></th>
             </tr>
           </thead>

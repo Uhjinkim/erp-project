@@ -47,3 +47,19 @@ dev 4f77219를 기준으로 [유지·변경·충돌](../../reports/2026-10-14_co
 [최신 미결 의제](../../reports/2026-10-14_module-review-agenda.md)와
 [기여 통합 현황](../../contributions/integration-status.md)을 함께 확인한다.
 이번에는 Notion 원문을 조회·수정하지 않았으며 원문 확인일을 최신 코드 확인일로 바꾸지 않았다.
+
+## 2026-10-28 공용 문서 갱신
+
+- [최신 기여 통합·배포 준비 보고서](../../reports/2026-10-28_documentation-deployment-readiness.md)
+- [Ubuntu EC2·RDS 배포 가이드](../../guides/ec2-rds-deployment.md)
+
+개인정보 수정 요청의 2026-10-27 사용자 결정과 현재 구현을 반영했다. Notion 원문 변경·확인일은
+갱신하지 않았다. 빈 RDS 초기화와 workforce 0007 적용은 staging 검증·대상 승인 이후의 작업이다.
+
+
+## 2026-10-29 기준 목록 캐시
+
+06 API의 응답 계약을 유지하면서 Redis/Valkey 기준 목록 캐시를 추가했다.
+[구현·검증 보고서](../../reports/2026-10-29_reference-cache.md)와
+[운영 설정 안내](../../guides/github-actions-aws-deployment.md)를 따른다.
+Notion 원문 확인일·업무 정책·테이블 정의는 변경하지 않았다.

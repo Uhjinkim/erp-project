@@ -1,3 +1,4 @@
+import { BUSINESS_TIME_ZONE } from "../../../utils/dateTime"
 import { useEffect, useState } from "react"
 
 import { loadPayrollHistory } from "../../../api/payroll"
@@ -62,7 +63,7 @@ export function HistoryDrawer({ statement, onClose }: HistoryDrawerProps) {
               <li key={entry.history_id}>
                 <strong>{entry.action}</strong>
                 <span className={styles.hint}>
-                  {detailed ? changedAt.toLocaleString("ko-KR") : changedAt.toLocaleDateString("ko-KR")}
+                  {detailed ? changedAt.toLocaleString("ko-KR", { timeZone: BUSINESS_TIME_ZONE }) : changedAt.toLocaleDateString("ko-KR", { timeZone: BUSINESS_TIME_ZONE })}
                   {detailed && ` · ${entry.actor_name ?? "알 수 없음"}`}
                 </span>
                 {detailed && entry.reason && <p>{entry.reason}</p>}

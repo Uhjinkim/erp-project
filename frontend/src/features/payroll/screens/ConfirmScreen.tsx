@@ -71,9 +71,9 @@ export function ConfirmScreen({ enabled, ownEmployeeNo, search }: ConfirmScreenP
             <th scope="col">사원</th>
             <th scope="col">정산월</th>
             <th scope="col">지급일</th>
-            <th scope="col">지급총액</th>
-            <th scope="col">공제총액</th>
-            <th scope="col">차인지급액</th>
+            <th scope="col" className={styles.amount}>지급총액</th>
+            <th scope="col" className={styles.amount}>공제총액</th>
+            <th scope="col" className={styles.amount}>차인지급액</th>
             <th scope="col">작업</th>
           </tr>
         </thead>

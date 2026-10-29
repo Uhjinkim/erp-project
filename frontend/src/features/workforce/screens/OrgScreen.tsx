@@ -96,7 +96,7 @@ function DepartmentDialog({ department, departments, enabled, onClose, onDone }:
         {(localError || mutation.error) && <Alert tone="error">{localError || mutation.error}</Alert>}
         <TextInput label="부서번호" required inputMode="numeric" disabled={department !== null} value={form.dept_no} error={errors.dept_no} hint={department ? "부서번호는 변경할 수 없습니다." : undefined} onChange={(event) => setForm({ ...form, dept_no: event.target.value })} />
         <TextInput label="부서명" required value={form.dept_name} error={errors.dept_name} onChange={(event) => setForm({ ...form, dept_name: event.target.value })} />
-        <Select label="상위 부서" value={form.parent_dept_no} error={errors.parent_dept_no} hint="계층 순환은 서버가 거절합니다." onChange={(event) => setForm({ ...form, parent_dept_no: event.target.value })}>
+        <Select label="상위 부서" value={form.parent_dept_no} error={errors.parent_dept_no} onChange={(event) => setForm({ ...form, parent_dept_no: event.target.value })}>
           <option value="">없음(최상위)</option>
           {parents.map((item) => <option key={item.dept_no} value={item.dept_no}>{item.dept_name} (#{item.dept_no})</option>)}
         </Select>

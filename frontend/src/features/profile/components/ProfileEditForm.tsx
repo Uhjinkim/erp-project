@@ -50,7 +50,7 @@ export function ProfileEditForm({ employee, onCancel, onSubmitted }: ProfileEdit
   return (
     <Card title="내 정보 수정">
       <form className={styles.stack} onSubmit={review} noValidate>
-        <p className={styles.hint}>바꿀 항목을 고친 뒤 수정완료를 누르세요. 인사관리자가 승인하면 반영되며, 사내 이메일은 로그인 아이디에도 반영됩니다.</p>
+        <p className={styles.hint}>사내 이메일을 변경하면 로그인 아이디도 변경됩니다.</p>
         {(errors.form || mutation.error) && <Alert tone="error">{errors.form || mutation.error}</Alert>}
         <fieldset className={styles.plain} disabled={mutation.pending}>
           <div className={styles.fieldGrid}>

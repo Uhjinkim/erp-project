@@ -14,6 +14,7 @@ from workforce.domain.personal_info import (
     ApprovalRequiredValues,
     ChangeRequestStatus,
     PersonalInfoChangeRequest,
+    ProcessorContext,
 )
 from workforce.domain.policies import EmployeeCandidate, EmployeeProfile
 
@@ -30,6 +31,18 @@ class WorkforceQueryGateway(Protocol):
 
 class EmployeeProfileGateway(Protocol):
     def employee_profile(self, employee_no: int) -> EmployeeProfile | None: ...
+
+
+class ActiveRolesGateway(Protocol):
+    def active_role_codes(self, employee_no: int) -> set[str]: ...
+
+
+class PersonalInfoWorkforceGateway(WorkforceQueryGateway, Protocol):
+    def processor_contexts(self, employee_nos: set[int]) -> dict[int, ProcessorContext]: ...
+
+
+class DepartmentHeadGateway(Protocol):
+    def is_department_head(self, employee_no: int) -> bool: ...
 
 
 class RoleCommandGateway(Protocol):

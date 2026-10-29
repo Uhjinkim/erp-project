@@ -10,9 +10,10 @@ type EmployeePickerProps = {
   // Filter mode offers "전체"; create mode requires a department before a person.
   mode: "filter" | "create"
   disabled?: boolean
+  ownEmployeeNo?: number | null
 }
 
-export function EmployeePicker({ targets, deptKey, empNo, onChange, mode, disabled = false }: EmployeePickerProps) {
+export function EmployeePicker({ targets, deptKey, empNo, onChange, mode, disabled = false, ownEmployeeNo }: EmployeePickerProps) {
   const departments = departmentsOf(targets)
   const candidates = mode === "create" && !deptKey ? [] : employeesIn(targets, deptKey)
   const personPlaceholder = mode === "filter" ? "전체 사람" : deptKey ? "사람 선택" : "부서를 먼저 선택하세요"
@@ -35,8 +36,8 @@ export function EmployeePicker({ targets, deptKey, empNo, onChange, mode, disabl
       >
         <option value="">{personPlaceholder}</option>
         {candidates.map((employee) => (
-          <option key={employee.emp_no} value={employee.emp_no}>
-            {employee.name} ({employee.emp_no}){employee.is_active ? "" : " · 퇴사"}
+          <option key={employee.emp_no} value={employee.emp_no} disabled={mode === "create" && employee.emp_no === ownEmployeeNo}>
+            {employee.name} ({employee.emp_no}){employee.is_active ? "" : " · 퇴사"}{mode === "create" && employee.emp_no === ownEmployeeNo ? " · 본인(생성 불가)" : ""}
           </option>
         ))}
       </Select>

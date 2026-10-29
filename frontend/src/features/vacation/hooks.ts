@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { emptyData, loadVacationData } from "./data"
 import type { VacationData } from "./data"
+import { listVacationTypes } from "../../api/vacation"
+import type { VacationType } from "../../types/vacation"
 import type { VacationRequest } from "../../types/vacation"
 
 export function useVacationData(employeeNo: number, connected: boolean, screen: string, requestId: number | null) {
@@ -53,4 +55,40 @@ export function useVacationMutation() {
     }
   }
   return { pending, error, saved, execute, reset: () => { if (!busy.current) { setSaved(null); setError(null) } } }
+}
+
+/** Initial balances arrive with types; refresh never clears the user's form. */
+export function useVacationBalances(employeeNo: number, initial: VacationType[]) {
+  const [result, setResult] = useState<{ source: VacationType[]; types: VacationType[] } | null>(null)
+  const types = result?.source === initial ? result.types : initial
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState<{ source: VacationType[]; error: Error } | null>(null)
+  const error = failure?.source === initial ? failure.error : null
+  const busy = useRef(false)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  const refresh = useCallback(async () => {
+    if (busy.current) return
+    busy.current = true
+    setPending(true)
+    setFailure(null)
+    try {
+      const result = await listVacationTypes(employeeNo, true)
+      if (mounted.current) setResult({ source: initial, types: result })
+    } catch (failure) {
+      if (mounted.current) setFailure({ source: initial, error: failure instanceof Error ? failure : new Error("잔여일수를 조회하지 못했습니다.") })
+    } finally {
+      busy.current = false
+      if (mounted.current) setPending(false)
+    }
+  }, [employeeNo, initial])
+  useEffect(() => {
+    if (!initial.some((type) => type.remaining_days === undefined)) return
+    const timer = window.setTimeout(() => { void refresh() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [initial, refresh])
+  return { types, pending, error, refresh }
 }

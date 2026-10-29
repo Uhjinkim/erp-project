@@ -1,18 +1,16 @@
+import { Settings, UsersRound } from "lucide-react"
 import type { ModuleRegistration } from "../../app/routing"
 
 export const registration: ModuleRegistration = {
   "id": "system",
   "label": "시스템",
-  "icon": "⚙",
-  "entry": "system-health",
+  "icon": Settings,
+  "entry": "account-admin",
   "screens": [
     {
       "id": "account-admin",
+      "icon": UsersRound,
       "title": "계정 관리"
-    },
-    {
-      "id": "system-health",
-      "title": "연결 상태·시스템 정보"
     }
   ]
 }

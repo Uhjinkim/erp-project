@@ -14,14 +14,14 @@ import styles from "./vacation.module.css"
 
 const employees = [1001, 1002, 2001, 9001]
 
-export function VacationPanel({ currentUser, connected, screenId, search = "" }: { currentUser: CurrentUser | null; connected: boolean; screenId: string; search?: string }) {
+export function VacationPanel({ currentUser, screenId, search = "" }: { currentUser: CurrentUser | null; screenId: string; search?: string }) {
   const query = new URLSearchParams(search)
   const development = environment.authMode === "development"
   const candidate = Number(query.get("employeeNo"))
   const identity = development ? employees.includes(candidate) ? candidate : 1001 : currentUser?.employee?.emp_no ?? 0
   return <div className={styles.stack}>
     {development && <Select label="개발용 현재 사용자" value={identity} onChange={(event) => { window.location.hash = vacationNavigation(Number(event.target.value))(screenId, undefined, query) }}>{employees.map((no) => <option key={no} value={no}>{no} · {no === 2001 ? "승인자" : no === 9001 ? "인사관리자" : "신청자"}</option>)}</Select>}
-    {!connected ? <EmptyState title="서버 연결 후 휴가 업무를 이용할 수 있습니다">연결 상태 화면에서 서버 연결을 확인하세요.</EmptyState> : !identity ? <EmptyState title="연결된 사원 정보가 없습니다">사원 연결을 확인한 후 다시 로그인하세요.</EmptyState> : <VacationWorkspace key={`${identity}:${screenId}`} employeeNo={identity} screen={screenId} search={search} development={development} />}
+    {!identity ? <EmptyState title="연결된 사원 정보가 없습니다">사원 연결을 확인한 후 다시 로그인하세요.</EmptyState> : <VacationWorkspace key={`${identity}:${screenId}`} employeeNo={identity} screen={screenId} search={search} development={development} />}
   </div>
 }
 

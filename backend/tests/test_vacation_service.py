@@ -92,6 +92,9 @@ class FakeBalances(LeaveBalanceGateway):
     def remaining_days(self, employee_no: int, type_id: str) -> Decimal | None:
         return self.remaining
 
+    def remaining_for_types(self, employee_no, types):
+        return {item.type_id: self.remaining for item in types}
+
     def deduct(self, employee_no: int, type_id: str, days: Decimal) -> bool:
         if days > self.remaining:
             raise InsufficientLeaveDaysError("잔여일수 부족")
@@ -139,3 +142,7 @@ def test_request_and_approval_create_atomic_history_entries() -> None:
 def test_request_cannot_exceed_remaining_days() -> None:
     with pytest.raises(InsufficientLeaveDaysError):
         service(FakeUnitOfWork(), remaining="0.50").request_vacation(command("1.00"))
+
+
+def test_list_type_balances_uses_submission_policy():
+    assert service(FakeUnitOfWork(), "0.50").list_type_balances(1001)[0]["remaining_days"] == "0.50"

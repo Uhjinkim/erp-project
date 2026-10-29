@@ -66,7 +66,7 @@ export function ItemsScreen({ enabled, ownEmployeeNo, search }: ItemsScreenProps
   }
 
   async function save() {
-    if (!editor || busy.current) return
+    if (!editor || !selected || isOwn || busy.current) return
     const items = itemsFromAmountValues(editor.amounts)
     if (items.length === 0) {
       setNotice({ tone: "error", text: "구성항목을 최소 1건 이상 입력해야 합니다." })
@@ -127,7 +127,7 @@ export function ItemsScreen({ enabled, ownEmployeeNo, search }: ItemsScreenProps
                 <tr>
                   <th scope="col">사원</th>
                   <th scope="col">정산월</th>
-                  <th scope="col">차인지급액</th>
+                  <th scope="col" className={styles.amount}>차인지급액</th>
                   <th scope="col">상태</th>
                   <th scope="col">작업</th>
                 </tr>
@@ -147,7 +147,7 @@ export function ItemsScreen({ enabled, ownEmployeeNo, search }: ItemsScreenProps
                       <td>
                         <span className={styles.row}>
                           <Button size="small" variant={statement.statement_id === selectedId ? "primary" : "secondary"} onClick={() => select(statement)}>
-                            {statement.status === "작성중" ? "편집" : "보기"}
+                            {statement.status === "작성중" && statement.employee_no !== ownEmployeeNo ? "편집" : "보기"}
                           </Button>
                           <Button size="small" variant="ghost" onClick={() => setHistoryFor(statement)}>이력</Button>
                         </span>
@@ -163,6 +163,7 @@ export function ItemsScreen({ enabled, ownEmployeeNo, search }: ItemsScreenProps
         <div className={styles.stack}>
           {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
           {!selected && <EmptyState title="정산을 선택하세요">목록에서 편집하거나 볼 급여를 고르면 여기에 표시됩니다.</EmptyState>}
+          {isOwn && <Alert tone="info">본인 급여는 다른 급여담당자가 수정·확정해야 합니다.</Alert>}
           {selected && !editor && (
             <PayslipView
               statement={selected}

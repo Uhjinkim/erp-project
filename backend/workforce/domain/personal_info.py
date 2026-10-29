@@ -106,6 +106,13 @@ class ProcessorAssignment:
         return self.employee_no is not None and actor_employee_no == self.employee_no
 
 
+@dataclass(frozen=True)
+class ProcessorContext:
+    requester_is_hr_manager: bool
+    department_head: EmployeeCandidate | None
+    department_head_is_hr_manager: bool = False
+
+
 def resolve_change_request_processor(
     *,
     requester_is_hr_manager: bool,

@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
-from workforce.application.ports import PersonalInfoRepository, WorkforceQueryGateway
+from workforce.application.ports import PersonalInfoRepository, PersonalInfoWorkforceGateway
 from workforce.application.services import HR_MANAGER_ROLE
 from workforce.domain.exceptions import WorkforceRuleViolation
 from workforce.domain.personal_info import (
@@ -36,7 +36,7 @@ class PersonalInfoService:
     def __init__(
         self,
         repository: PersonalInfoRepository,
-        workforce: WorkforceQueryGateway,
+        workforce: PersonalInfoWorkforceGateway,
         clock: Callable[[], datetime],
     ) -> None:
         self.repository = repository
@@ -135,12 +135,28 @@ class PersonalInfoService:
             pending = self.repository.list_requests(
                 employee_no=None, status=ChangeRequestStatus.PENDING
             )
+            self._prime_processors(pending)
             return [request for request in pending if self.can_process(request, actor)]
         if (actor.is_hr_manager or actor.is_superuser) and not mine_only:
-            return self.repository.list_requests(employee_no=None, status=status)
-        if actor.employee_no is None:
+            requests = self.repository.list_requests(employee_no=None, status=status)
+        elif actor.employee_no is None:
             return []
-        return self.repository.list_requests(employee_no=actor.employee_no, status=status)
+        else:
+            requests = self.repository.list_requests(employee_no=actor.employee_no, status=status)
+        self._prime_processors(requests)
+        return requests
+
+    def _prime_processors(self, requests: list[PersonalInfoChangeRequest]) -> None:
+        employee_nos = {
+            request.employee_no for request in requests
+            if request.status == ChangeRequestStatus.PENDING
+        }
+        for employee_no, context in self.workforce.processor_contexts(employee_nos).items():
+            self._processor_cache[employee_no] = resolve_change_request_processor(
+                requester_is_hr_manager=context.requester_is_hr_manager,
+                department_head=context.department_head,
+                department_head_is_hr_manager=context.department_head_is_hr_manager,
+            )
 
     def _can_view(self, request: PersonalInfoChangeRequest, actor: Actor) -> bool:
         return (
@@ -177,6 +193,8 @@ class PersonalInfoService:
         )
 
     def _get_for_processing(self, request_id: int, actor: Actor) -> PersonalInfoChangeRequest:
+        # 목록에서 읽은 권한을 명령에 재사용하지 않는다. 트랜잭션 안에서 다시 판정한다.
+        self._processor_cache.clear()
         request = self.repository.get_request(request_id, for_update=True)
         if request is None or not self._can_view(request, actor):
             raise RequestNotFound("수정 요청을 찾을 수 없습니다.")

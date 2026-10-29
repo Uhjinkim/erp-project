@@ -1,4 +1,6 @@
 from workforce.application.ports import (
+    ActiveRolesGateway,
+    DepartmentHeadGateway,
     EmployeeProfileGateway,
     RoleCommandGateway,
     WorkforceQueryGateway,
@@ -16,12 +18,21 @@ MANAGEMENT_OFFICER_ROLE = "MANAGEMENT_OFFICER"
 PAYROLL_MANAGER_ROLE = "PAYROLL_MANAGER"
 
 
+def is_department_head(employee_no: int, gateway: DepartmentHeadGateway) -> bool:
+    """메뉴 안내용 조직 정보. 업무별 권한과 처리 대상은 각 API가 검사한다."""
+    return gateway.is_department_head(employee_no)
+
+
 def employee_has_role(
     employee_no: int,
     role_code: str,
     gateway: WorkforceQueryGateway,
 ) -> bool:
     return gateway.has_active_role(employee_no, role_code)
+
+
+def active_employee_roles(employee_no: int, gateway: ActiveRolesGateway) -> set[str]:
+    return gateway.active_role_codes(employee_no)
 
 
 def get_employee_profile(

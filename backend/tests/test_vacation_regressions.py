@@ -204,6 +204,36 @@ def test_non_deducting_leave_can_be_approved_without_balance(vacation):
     assert balance.remaining_days == 1
 
 
+def test_half_day_uses_annual_balance_without_separate_balance(vacation):
+    from vacation.domain.exceptions import InsufficientLeaveDaysError
+
+    service, annual_balance = vacation
+    LeaveTypeModel.objects.create(
+        type_id="HALF", type_name="반차", deduct_days=Decimal("0.50")
+    )
+    half_command = RequestVacationCommand(
+        1001, "HALF", datetime(2026, 10, 1, tzinfo=UTC),
+        datetime(2026, 10, 1, 13, tzinfo=UTC), Decimal("0.50")
+    )
+    annual_request = service.request_vacation(command())
+    half_request = service.request_vacation(half_command)
+    service.approve(half_request.request_id, 2001)
+
+    annual_balance.refresh_from_db()
+    assert annual_balance.remaining_days == Decimal("0.50")
+    assert not LeaveBalanceModel.objects.filter(vacation_type_id="HALF").exists()
+    assert service.balances.remaining_days(1001, "ANNUAL") == Decimal("0.50")
+    assert service.balances.remaining_days(1001, "HALF") == Decimal("0.50")
+    balances = service.balances.remaining_for_types(1001, service.list_types(1001))
+    assert balances["ANNUAL"] == balances["HALF"] == Decimal("0.50")
+    with pytest.raises(InsufficientLeaveDaysError):
+        service.approve(annual_request.request_id, 2001)
+
+    service.recall(half_request.request_id, 2001, "정정")
+    annual_balance.refresh_from_db()
+    assert annual_balance.remaining_days == Decimal("1.00")
+
+
 def test_development_approvals_consume_configured_allowance(vacation):
     from vacation.domain.exceptions import InsufficientLeaveDaysError
     from vacation.infrastructure.development_gateways import SettingsLeaveBalanceGateway
@@ -221,6 +251,30 @@ def test_development_approvals_consume_configured_allowance(vacation):
         service.recall(first.request_id, 2001, "정정")
         service.approve(second.request_id, 2001)
         assert service.balances.remaining_days(1001, "ANNUAL") == 0
+
+
+def test_development_half_day_shares_annual_allowance(vacation):
+    from vacation.infrastructure.development_gateways import SettingsLeaveBalanceGateway
+
+    service, _ = vacation
+    LeaveTypeModel.objects.create(
+        type_id="HALF", type_name="반차", deduct_days=Decimal("0.50")
+    )
+    service.balances = SettingsLeaveBalanceGateway()
+    half_command = RequestVacationCommand(
+        1001, "HALF", datetime(2026, 10, 1, tzinfo=UTC),
+        datetime(2026, 10, 1, 13, tzinfo=UTC), Decimal("0.50")
+    )
+    with override_settings(VACATION_DEVELOPMENT_EMPLOYEES={
+        "1001": {"balances": {"ANNUAL": "1.00"}}
+    }):
+        item = service.request_vacation(half_command)
+        service.approve(item.request_id, 2001)
+        balances = service.balances.remaining_for_types(1001, service.list_types(1001))
+        assert balances["ANNUAL"] == balances["HALF"] == Decimal("0.50")
+        assert service.balances.remaining_days(1001, "HALF") == Decimal("0.50")
+        service.recall(item.request_id, 2001, "정정")
+        assert service.balances.remaining_days(1001, "ANNUAL") == Decimal("1.00")
 
 
 @pytest.mark.parametrize("action, actor", [("approve", 1001), ("recall", 1001)])
@@ -291,3 +345,85 @@ def test_pending_cancel_and_reject_leave_balance_unchanged(vacation, action):
     balance.refresh_from_db()
     assert balance.remaining_days == 1
     assert not LeaveRequestModel.objects.get(pk=item.request_id).balance_deducted
+
+
+@pytest.mark.parametrize("count", [1, 12])
+def test_balance_read_is_bulk_and_matches_submission(vacation, django_assert_num_queries, count):
+    service, balance = vacation
+    for index in range(count):
+        LeaveTypeModel.objects.create(type_id=f"TYPE{index}", type_name=f"합성 유형 {index}")
+    LeaveTypeModel.objects.create(type_id="FREE", type_name="비차감", deduct_days=0)
+    types = service.list_types(1001)
+    with django_assert_num_queries(1):
+        balances = service.balances.remaining_for_types(1001, types)
+    assert balances["ANNUAL"] == Decimal("1.00")
+    assert balances["TYPE0"] == Decimal("0")
+    assert balances["FREE"] is None
+    for item in types:
+        assert balances[item.type_id] == service.balances.remaining_days(1001, item.type_id)
+
+
+def test_balance_api_only_exposes_authenticated_employee(vacation):
+    from accounts.models import User
+
+    _, balance = vacation
+    other = Employee.objects.get(employee_no=2001)
+    LeaveBalanceModel.objects.create(
+        employee=other, vacation_type=balance.vacation_type, remaining_days=9
+    )
+    client = APIClient()
+    client.force_authenticate(User.objects.create_user(
+        email="balance@example.com", employee=balance.employee
+    ))
+    with override_settings(VACATION_INTEGRATION_MODE="database"):
+        response = client.get(
+            "/api/vacations/types/?include_balance=true&employee_no=2001",
+            HTTP_X_EMPLOYEE_NO="2001",
+        )
+        assert response.status_code == 200
+        assert response.json()[0]["remaining_days"] == "1.00"
+        assert "remaining_days" not in client.get("/api/vacations/types/").json()[0]
+        client.force_authenticate(user=None)
+        assert client.get("/api/vacations/types/?include_balance=true").status_code == 403
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("header, expected", [(None, 403), ("invalid", 403), ("999999", 400)])
+def test_balance_api_rejects_invalid_identity(header, expected):
+    headers = {"HTTP_X_EMPLOYEE_NO": header} if header else {}
+    response = APIClient().get("/api/vacations/types/?include_balance=true", **headers)
+    assert response.status_code == expected
+
+
+@pytest.mark.django_db
+def test_balance_api_validates_option_and_handles_unavailability():
+    client = APIClient()
+    assert client.get(
+        "/api/vacations/types/?include_balance=invalid", HTTP_X_EMPLOYEE_NO="1001"
+    ).status_code == 400
+    with override_settings(DEVELOPMENT_OFFLINE_MODE=True):
+        assert client.get(
+            "/api/vacations/types/?include_balance=true", HTTP_X_EMPLOYEE_NO="1001"
+        ).status_code == 503
+
+
+def test_development_balance_batch_tracks_approved_usage(vacation, django_assert_num_queries):
+    from vacation.infrastructure.development_gateways import SettingsLeaveBalanceGateway
+
+    service, _ = vacation
+    gateway = SettingsLeaveBalanceGateway()
+    with override_settings(VACATION_DEVELOPMENT_EMPLOYEES={
+        "1001": {"active": True, "balances": {"ANNUAL": "5.50"}}
+    }):
+        item = service.request_vacation(command())
+        types = service.list_types(1001)
+        with django_assert_num_queries(1):
+            assert gateway.remaining_for_types(1001, types)["ANNUAL"] == Decimal("5.50")
+        service.approve(item.request_id, 2001)
+        assert gateway.remaining_for_types(1001, types)["ANNUAL"] == Decimal("4.50")
+        assert gateway.remaining_for_types(1001, types)["ANNUAL"] == gateway.remaining_days(
+            1001, "ANNUAL"
+        )
+        service.recall(item.request_id, 2001, "합성 회수")
+        assert gateway.remaining_for_types(1001, types)["ANNUAL"] == Decimal("5.50")
+        assert gateway.remaining_for_types(2001, types)["ANNUAL"] is None

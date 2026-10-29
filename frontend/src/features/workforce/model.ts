@@ -1,3 +1,4 @@
+import { BUSINESS_TIME_ZONE, businessToday } from "../../utils/dateTime"
 import { routeHref } from "../../app/routing"
 import type { CurrentUser } from "../../types/auth"
 import type {
@@ -14,10 +15,10 @@ export const HR_MANAGER_ROLE = "HR_MANAGER"
 export const TENURE_STATUSES = ["재직", "휴직", "퇴사"] as const
 export const PAGE_SIZE = 20
 
-// 사원·조직 메뉴는 HR_MANAGER 역할 계정에게만 보인다(2026-10-27 결정, superuser도 역할이 있어야 함).
+// 2026-10-29 결정: HR_MANAGER 또는 superuser는 기존 서버 권한과 동일하게 화면에 진입한다.
 // 화면 안내용 판정이며 실제 권한은 workforce API가 HR-001·HR-005에 따라 검사한다.
 export function isHRManager(user: CurrentUser) {
-  return user.roles.includes(HR_MANAGER_ROLE)
+  return user.is_superuser || user.roles.includes(HR_MANAGER_ROLE)
 }
 
 export function workforceHref(screenId: string, params: Record<string, string | number | undefined> = {}) {
@@ -65,13 +66,12 @@ export function formatDateTime(value: string | null) {
   if (!value) return "-"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })
+  return date.toLocaleString("ko-KR", { timeZone: BUSINESS_TIME_ZONE, dateStyle: "medium", timeStyle: "short" })
 }
 
-// 날짜 입력의 기본값과 max에 사용하는 로컬 기준 오늘(YYYY-MM-DD).
+// 날짜 입력의 기본값과 max에 사용하는 서울 기준 오늘(YYYY-MM-DD).
 export function localToday(now = new Date()) {
-  const offset = now.getTimezoneOffset() * 60_000
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+  return businessToday(now)
 }
 
 export function departmentLabel(departments: DepartmentSummary[], deptNo: number | null) {

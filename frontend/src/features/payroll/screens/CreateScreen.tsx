@@ -49,6 +49,7 @@ export function CreateScreen({ enabled, ownEmployeeNo, search }: CreateScreenPro
 
   const statements = data.statements
   const missing = isPeriod(period) ? missingEmployees(data.targets, statements, period) : []
+  const isSelf = empNo !== "" && Number(empNo) === ownEmployeeNo
 
   // Start from the previous month's amounts when that statement exists; otherwise a blank form.
   function prefill(nextEmp: string, nextPeriod: string) {
@@ -58,6 +59,10 @@ export function CreateScreen({ enabled, ownEmployeeNo, search }: CreateScreenPro
   }
 
   function choose(nextDept: string, nextEmp: string) {
+    if (nextEmp && Number(nextEmp) === ownEmployeeNo) {
+      setMessage("본인 급여는 다른 급여담당자가 생성해야 합니다.")
+      return
+    }
     setDeptKey(nextDept)
     setEmpNo(nextEmp)
     setCreated(null)
@@ -79,6 +84,10 @@ export function CreateScreen({ enabled, ownEmployeeNo, search }: CreateScreenPro
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (busy.current) return
+    if (isSelf) {
+      setMessage("본인 급여는 다른 급여담당자가 생성해야 합니다.")
+      return
+    }
     if (!empNo || !isPeriod(period)) {
       setMessage("정산월과 사람을 선택해주세요.")
       return
@@ -136,7 +145,7 @@ export function CreateScreen({ enabled, ownEmployeeNo, search }: CreateScreenPro
               </Alert>
             )}
             <div className={styles.fieldGrid}>
-              <EmployeePicker targets={data.targets} deptKey={deptKey} empNo={empNo} onChange={choose} mode="create" disabled={pending} />
+              <EmployeePicker targets={data.targets} deptKey={deptKey} empNo={empNo} onChange={choose} mode="create" disabled={pending} ownEmployeeNo={ownEmployeeNo} />
               <TextInput
                 label="정산월"
                 type="month"
@@ -160,12 +169,12 @@ export function CreateScreen({ enabled, ownEmployeeNo, search }: CreateScreenPro
             <AmountFields
               components={data.components}
               values={amounts}
-              disabled={pending}
+              disabled={pending || isSelf || !empNo}
               onChange={(code, value) => setAmounts((previous) => ({ ...previous, [code]: value }))}
             />
             <div className={styles.formFooter}>
-              <span className={styles.hint}>확정은 &lsquo;급여 확정·정정&rsquo; 화면에서 합니다.</span>
-              <Button type="submit" pending={pending}>작성중으로 저장</Button>
+              <span className={styles.hint}>본인 급여는 다른 급여담당자가 처리합니다. 확정은 &lsquo;급여 확정·정정&rsquo; 화면에서 합니다.</span>
+              <Button type="submit" pending={pending} disabled={isSelf || !empNo}>작성중으로 저장</Button>
             </div>
           </form>
         </Card>

@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react"
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import { Alert, Badge, Button, Card, ConfirmDialog, DetailList, EmptyState, ErrorState, Select, Spinner, Textarea, TextInput } from "../../../components/ui"
@@ -72,7 +73,7 @@ function CreateForm({ enabled, empNo, year }: { enabled: boolean; empNo: string;
   }
 
   return <div className={styles.stack}>
-    <a className={styles.link} href={evaluationHref("evaluation-team")}>← 팀 평가 대상 목록</a>
+    <a className={styles.link} href={evaluationHref("evaluation-team")}><ArrowLeft size={16} aria-hidden="true" />팀 평가 대상 목록</a>
     <Card title="평가 작성">
       <form className={styles.form} onSubmit={submit}>
         {message && <Alert tone="error">{message}</Alert>}
@@ -150,7 +151,7 @@ function EvaluationEditor({ evalId, user, enabled }: { evalId: number; user: Cur
 
   const canEdit = evaluation.evaluator_no === myNo && EDITABLE.includes(evaluation.eval_status)
   return <div className={styles.stack}>
-    <a className={styles.link} href={evaluationHref("evaluation-team")}>← 팀 평가 대상 목록</a>
+    <a className={styles.link} href={evaluationHref("evaluation-team")}><ArrowLeft size={16} aria-hidden="true" />팀 평가 대상 목록</a>
     <div className={styles.workspace}>
       <Card title={`${evaluation.employee_name ?? evaluation.emp_no} · ${evaluation.eval_year}`} actions={<Badge tone={STATUS_TONE[evaluation.eval_status]}>{evaluation.eval_status}</Badge>}>
         <div className={styles.form}>

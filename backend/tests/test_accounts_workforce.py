@@ -373,3 +373,38 @@ def test_session_identity_and_workforce_gateway_complete_vacation_flow() -> None
     )
     assert approved.status_code == 200
     assert approved.json()["status"] == "승인"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kind", ["member", "head", "other_department_head", "unlinked"])
+def test_auth_navigation_department_head_matches_organization(kind: str) -> None:
+    """FN-EV-001 메뉴 안내는 직급명이 아니라 부서장 지정으로 판정한다."""
+    department = Department.objects.create(dept_no=10, dept_name="합성 개발팀")
+    employee = None if kind == "unlinked" else create_employee(
+        1001, "navigation@example.test", department=department
+    )
+    if kind == "head":
+        department.head = employee
+        department.save(update_fields=["head"])
+    elif kind == "other_department_head":
+        Department.objects.create(dept_no=20, dept_name="합성 겸직팀", head=employee)
+    User.objects.create_user(
+        email="navigation@example.test", password="synthetic-password", employee=employee
+    )
+    client = APIClient()
+    login = client.post(
+        "/api/auth/login/",
+        {"email": "navigation@example.test", "password": "synthetic-password"},
+        format="json",
+    )
+    expected = kind in {"head", "other_department_head"}
+    assert login.status_code == 200
+    assert login.json()["is_department_head"] is expected
+    me = client.get("/api/auth/me/")
+    assert me.status_code == 200
+    assert me.json()["is_department_head"] is expected
+
+
+@pytest.mark.django_db
+def test_auth_navigation_requires_authentication() -> None:
+    assert APIClient().get("/api/auth/me/").status_code == 403

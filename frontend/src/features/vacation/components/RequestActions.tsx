@@ -38,14 +38,14 @@ export function RequestActions({ item, types, employeeNo, href, screen, onRefres
       <div className={styles.row}>{actions.map((value) => <Button key={value} variant={value === "approve" ? "primary" : "danger"} disabled={mutation.pending} onClick={() => { setReason(""); setReasonError(""); setAction(value) }}>{labels[value]}</Button>)}
         {canResubmit(current, employeeNo) && <a href={href("leave-resubmit", current.request_id)}>수정·재신청</a>}
         <a href={href("leave-detail", current.request_id)}>상세·이력</a><a href={href("leave-mine")}>내 신청</a><a href={href("leave-queue")}>승인 대기함</a>
-        <Button variant="ghost" onClick={onRefresh} disabled={mutation.pending}>서버 상태 새로고침</Button>
+        <Button variant="ghost" onClick={onRefresh} disabled={mutation.pending}>새로고침</Button>
       </div>
       {!action && mutation.error && <Alert tone="error">{mutation.error.message}</Alert>}
     </Card>
     </div>
     <ConfirmDialog open={action !== null} title={action ? `LV-${current.request_id} ${labels[action]}` : "신청 처리"} busy={mutation.pending} onClose={() => setAction(null)} onConfirm={() => void confirm()} confirmLabel={action ? labels[action] : "확인"} danger={action !== "approve"}>
       <div className={styles.stack}>
-        <p>{action === "approve" ? "이 신청을 승인합니다. 잔여일수는 서버에서 검증하고 반영합니다." : action === "cancel" ? "대기 중인 본인 신청을 취소합니다." : action === "recall" ? "승인을 회수합니다. 신청자는 수정 후 다시 신청할 수 있습니다." : "이 신청을 반려합니다."}</p>
+        <p>{action === "approve" ? "이 신청을 승인합니다." : action === "cancel" ? "대기 중인 본인 신청을 취소합니다." : action === "recall" ? "승인을 회수합니다. 신청자는 수정 후 다시 신청할 수 있습니다." : "이 신청을 반려합니다."}</p>
         {needsReason && <Textarea label="처리 사유" required maxLength={255} rows={4} value={reason} error={reasonError} disabled={mutation.pending} onChange={(event) => { setReason(event.target.value); setReasonError("") }} />}
         {mutation.error && <Alert tone="error">{mutation.error.message}</Alert>}
       </div>

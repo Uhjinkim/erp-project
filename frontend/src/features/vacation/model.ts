@@ -1,3 +1,4 @@
+import { BUSINESS_TIME_ZONE, businessDateTime, parseBusinessDateTime } from "../../utils/dateTime"
 import type { VacationAction, VacationHistory, VacationInput, VacationRequest, VacationSnapshot, VacationType } from "../../types/vacation"
 
 export const statuses = ["대기", "승인", "반려", "취소", "회수"] as const
@@ -10,22 +11,21 @@ export function requestIdFromSearch(search = "") {
 }
 
 export function localDateTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ""
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19)
+  return businessDateTime(value)
 }
 
 export function displayDateTime(value: string | null) {
   if (!value) return "—"
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? "확인 필요" : date.toLocaleString("ko-KR")
+  return Number.isNaN(date.getTime()) ? "확인 필요" : date.toLocaleString("ko-KR", { timeZone: BUSINESS_TIME_ZONE })
 }
 
-export function formFromRequest(item?: VacationRequest): VacationInput {
+export function formFromRequest(item?: VacationRequest, now = new Date()): VacationInput {
+  const today = localDateTime(now.toISOString()).slice(0, 10)
   return {
     type_id: item?.type_id ?? "",
-    start_datetime: item ? localDateTime(item.start_datetime) : "",
-    end_datetime: item ? localDateTime(item.end_datetime) : "",
+    start_datetime: item ? localDateTime(item.start_datetime).slice(0, 16) : `${today}T09:00`,
+    end_datetime: item ? localDateTime(item.end_datetime).slice(0, 16) : `${today}T18:00`,
     use_days: item ? String(item.use_days) : "1.00",
     reason: item?.request_reason ?? "",
   }
@@ -34,9 +34,10 @@ export function formFromRequest(item?: VacationRequest): VacationInput {
 export function validateInput(input: VacationInput) {
   const errors: Record<string, string> = {}
   if (!input.type_id) errors.type_id = "휴가 유형을 선택하세요."
-  const start = new Date(input.start_datetime).getTime()
-  const end = new Date(input.end_datetime).getTime()
+  const start = parseBusinessDateTime(input.start_datetime).getTime()
+  const end = parseBusinessDateTime(input.end_datetime).getTime()
   if (!Number.isFinite(start)) errors.start_datetime = "시작 일시를 입력하세요."
+  if (Number.isFinite(start) && Number(businessDateTime(new Date(start)).slice(11, 13)) < 9) errors.start_datetime = "시작 시간은 오전 9시부터 선택할 수 있습니다."
   if (!Number.isFinite(end)) errors.end_datetime = "종료 일시를 입력하세요."
   if (Number.isFinite(start) && Number.isFinite(end) && end < start) errors.end_datetime = "종료 일시는 시작보다 빠를 수 없습니다."
   if (!/^\d(\.\d{1,2})?$/.test(input.use_days) || Number(input.use_days) < 0.01) errors.use_days = "0.01~9.99일을 소수 둘째 자리까지 입력하세요."
@@ -45,7 +46,12 @@ export function validateInput(input: VacationInput) {
 }
 
 export function transportInput(input: VacationInput): VacationInput {
-  return { ...input, start_datetime: new Date(input.start_datetime).toISOString(), end_datetime: new Date(input.end_datetime).toISOString() }
+  const minutePrecision = (value: string) => {
+    const date = parseBusinessDateTime(value)
+    date.setUTCSeconds(0, 0)
+    return date.toISOString()
+  }
+  return { ...input, start_datetime: minutePrecision(input.start_datetime), end_datetime: minutePrecision(input.end_datetime) }
 }
 
 // UI guidance for LV-005~007; the server remains responsible for authorization.
@@ -100,4 +106,12 @@ export function snapshotChanges(entry: VacationHistory, types: VacationType[]) {
   return (Object.keys(snapshotLabels) as (keyof VacationSnapshot)[])
     .filter((key) => key === "use_days" ? Number(before[key]) !== Number(after[key]) : String(before[key] ?? "") !== String(after[key] ?? ""))
     .map((key) => ({ key, label: snapshotLabels[key], before: display(key, before[key]), after: display(key, after[key]) }))
+}
+
+
+/** Use the server's suggested day unit when the user chooses another type. */
+export function formWithVacationType(form: VacationInput, type?: VacationType): VacationInput {
+  if (!type) return { ...form, type_id: "" }
+  const suggested = Number(type.deduct_days)
+  return { ...form, type_id: type.type_id, use_days: suggested > 0 ? suggested.toFixed(2) : form.use_days }
 }

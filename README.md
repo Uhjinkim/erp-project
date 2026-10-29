@@ -7,6 +7,9 @@
 
 ## 프로젝트 개요
 
+운영 배포는 [main GitHub Actions · EC2/IP HTTPS 가이드](docs/guides/aws-main-cicd.md)를 따른다.
+`dev`는 CI, `main`은 CI 성공 후 기존 AWS EC2에 자동 배포한다. 운영 Secret은 서버에서 주입한다.
+
 ### 기술 구성
 
 - Backend: Python 3.13, Django 5.2 LTS, Django REST Framework, uv
@@ -21,7 +24,7 @@
 - 휴가 신청, 취소, 승인, 반려, 승인 회수와 상태 이력
 - 부서장 우선 승인 및 부서장 부재 시 인사 승인담당자 fallback
 - Backend, PostgreSQL, Redis와 사원 연동 상태 확인
-- 개발환경 전용 오프라인 시뮬레이션과 연결 상태 표시
+- 업무별 API 오류 안내와 인증 서버 재시도
 
 ### 저장소 구조
 
@@ -198,6 +201,56 @@ REDIS_URL=redis://:<REDIS_PASSWORD>@127.0.0.1:6379/0
 
 실제 계정과 비밀번호는 인프라 관리자에게 받아 로컬 파일에만 입력합니다.
 
+개발 PostgreSQL 연결은 기본적으로 프로세스별 psycopg 풀을 사용합니다. 의존성을 `uv sync`로
+갱신하고 백엔드를 재시작하면 적용됩니다. Django runserver의 요청 스레드 사이에서도 연결을
+반납·재사용하며, SQLite 오프라인 모드에는 적용하지 않습니다.
+
+| backend 개발 환경변수 | 기본값 | 의미 |
+| --- | --- | --- |
+| `DB_POOL_ENABLED` | `true` | 개발 PostgreSQL 연결 풀 사용. `false`로 비활성화 가능 |
+| `DB_POOL_MIN_SIZE` | `0` | 최소 유지 연결 수. 사용 전 접속을 만들지 않음 |
+| `DB_POOL_MAX_SIZE` | `4` | 프로세스별 최대 연결 수 |
+| `DB_POOL_TIMEOUT` | `15` | 풀 연결 획득 대기 상한(초) |
+| `DB_CONNECT_TIMEOUT` | `10` | PostgreSQL 개별 접속 제한시간(초) |
+| `HEALTH_CHECK_TIMEOUT_SECONDS` | `10.0` | 개발 Redis 상태 점검의 접속·응답 대기 제한(각각 초) |
+
+SSH 경유 최초 접속이 4초 이상 걸릴 수 있어 개별 접속 10초·풀 대여 15초의 여유를 둡니다.
+풀 대여는 SQL 실행 전체나 프론트 API 제한시간을 뜻하지 않습니다.
+Redis 상태 점검도 SSH 최초 연결을 기다리도록 개발 기본값을 10초로 둡니다. 기존 로컬 설정에
+`HEALTH_CHECK_TIMEOUT_SECONDS=1.0`이 있으면 `10.0`으로 변경하고 서버를 재시작하세요.
+이 값은 점검 API 전체 제한시간이 아니며, 운영 기본값과 업무 API 제한시간은 별도입니다.
+
+풀은 `CONN_MAX_AGE=0`으로 요청 종료 시 연결을 반환하고, 다음 대여 시 연결 검사를 합니다.
+유휴 연결은 60초 후 축소하며 프로세스를 종료하면 풀도 종료됩니다. 개발 서버·터미널을 여러 개
+띄우면 각각 별도 풀이므로 전체 연결 예산은 프로세스 수 × 최대 연결 수로 확인하세요.
+터널 연결 거부는 풀로 해결되지 않으며 기존 SSH 터널부터 복구해야 합니다. 운영 Gunicorn은
+기존 `DB_CONN_MAX_AGE=60`·연결 검사 설정을 유지하고 이 개발 풀 환경변수는 사용하지 않습니다.
+실측·쿼리 감소 결과는 [성능 보완 보고서](docs/reports/2026-10-29_database-query-improvements.md)를 참고하세요.
+
+
+### 업무 기준 목록 캐시
+
+직급·역할 코드·부서 표시 목록·활성 휴가 유형은 기존 Redis 또는 ElastiCache Valkey에
+캐시합니다. 운영은 기본 활성화, 개발은 기본 비활성화입니다. 개발에서 사용하려면 backend
+환경변수에 `REFERENCE_CACHE_ENABLED=true`를 설정하고 서버를 재시작합니다.
+
+| 환경변수 | 기본값 | 용도 |
+| --- | --- | --- |
+| `REFERENCE_CACHE_ENABLED` | 개발 `false`, 운영 `true` | 기준 목록 캐시 사용 |
+| `REFERENCE_CACHE_TTL` | `180` | 목록 유지 시간, 1~300초 |
+| `REFERENCE_CACHE_TIMEOUT` | `0.2` | Redis 연결·읽기 각각의 제한시간, 0초 초과~1초 |
+| `REFERENCE_CACHE_URL` | `REDIS_URL` 값 | 별도 캐시 접점, TLS는 `rediss://` |
+| `REFERENCE_CACHE_KEY_PREFIX` | `erp:<환경>:reference:v1` | 동일 Redis를 사용하는 배포별 키 구분 |
+
+ORM 저장·삭제 후 트랜잭션 커밋 시 해당 목록을 무효화합니다. 캐시 장애 시 DB 조회로 대체하고
+5초 동안 캐시 읽기를 생략합니다. 자동 재시도는 없지만 한 요청에 여러 캐시 명령이 있으므로
+제한시간은 요청 전체의 제한이 아닙니다. 역할 부여·권한 판정·재직 확인·휴가 잔여·신청·승인·급여는
+최신 DB를 사용합니다. 세션 저장 방식도 유지합니다.
+
+외부 SQL·bulk update는 신호를 거치지 않으므로 목록에 최대 TTL만큼 이전 표시가 남을 수
+있습니다. 무효화 도중 Redis가 끊겨도 동일한 제한이 있습니다. 운영 연결 및 명령 권한은
+[캐시 적용 보고서](docs/reports/2026-10-29_reference-cache.md)를 참고하세요.
+
 ### 실제 데이터 연동과 세션 인증
 
 실제 사원·부서 데이터와 이메일 세션 인증을 사용하는 기본 개발 조합입니다.
@@ -264,6 +317,12 @@ Windows PowerShell:
 ```powershell
 .\scripts\ssh-tunnel.ps1
 ```
+
+연결이 반복 종료될 때는 `./scripts/ssh-tunnel.sh --diagnostic` 또는
+`.\scripts\ssh-tunnel.ps1 -Diagnostic`으로 실행하면 사용자 임시 디렉터리에 SSH 상세 로그를
+남깁니다. 로그 경로는 시작 시 표시되며 현재 연결에는 소급 적용되지 않습니다. 로그에는
+호스트·사용자·키 경로 등의 접속 메타데이터가 포함되므로 공유할 때 가리고 저장소에는 추가하지 않습니다.
+SSH 키/비밀번호 입력 방식은 동일하며 자동 재접속하거나 서버 설정을 바꾸지 않습니다.
 
 터널은 PostgreSQL을 기본 `127.0.0.1:5432`, Redis를 기본 `127.0.0.1:6379`에 연결합니다.
 포트를 변경하면 루트 터널 설정과 Backend 접속 설정을 함께 변경해야 합니다. 터널을 종료하려면
@@ -366,8 +425,8 @@ Vite는 `/api` 요청을 `http://127.0.0.1:8000`으로 프록시합니다.
 ## 6. 연결 상태와 오프라인 개발
 
 `GET /api/health/`는 Backend, PostgreSQL, Redis, Workforce와 전체 E2E 상태를 반환합니다.
-Frontend는 전체 연결이 정상이 아닐 때 `오프라인 / 미연결` 상태를 표시하고 업무 입력을
-비활성화합니다.
+운영 진단 API로 유지하며 프론트엔드는 이를 폴링하지 않습니다. 업무 화면은 각 API의
+성공·실패를 기준으로 표시하며 별도 연결 상태 UI로 입력을 차단하지 않습니다.
 
 Redis health check는 `REDIS_URL`의 ACL 사용자·비밀번호·TLS·DB 설정으로 실제 `PING` 명령을
 실행합니다. TCP 터널만 열려 있거나 인증에 실패하거나 제한시간 안에 응답하지 않으면 Redis를
@@ -384,16 +443,8 @@ DEVELOPMENT_OFFLINE_MODE=true
 이 모드는 개발 settings에서만 동작하며 SQLite를 사용합니다. 초기 SQLite에는 migration이
 적용되어 있지 않으므로 상태 확인과 연결 실패 시뮬레이션 용도로 사용합니다.
 
-### Frontend 오프라인 시뮬레이션
-
-개발 화면의 `오프라인 테스트` 제어를 사용하거나 다음 값으로 초기 상태를 지정합니다.
-
-```dotenv
-VITE_ENABLE_CONNECTION_TEST_CONTROLS=true
-VITE_DEV_OFFLINE_MODE=true
-```
-
-운영 빌드에서는 개발용 사용자 선택과 오프라인 테스트 제어가 비활성화됩니다.
+공통 컴포넌트 전시·연결 상태 화면과 개발 오프라인 제어는 배포 준비 과정에서 제거했습니다.
+운영 빌드에서는 개발용 사원 선택도 비활성화됩니다.
 
 ## 7. 인증과 업무 모듈
 
@@ -406,7 +457,7 @@ Django 서버 세션과 HttpOnly 쿠키로 관리합니다.
 - 인증 API: `/api/auth/csrf/`, `/api/auth/login/`, `/api/auth/logout/`, `/api/auth/me/`
 - 계정 관리 API: `/api/auth/accounts/`
 - 사원·부서 API: `/api/workforce/`
-- 인사 관리 권한: 활성 `HR_MANAGER`
+- 인사 관리 권한: 활성 `HR_MANAGER` 또는 슈퍼유저
 - 휴가 fallback 승인자: 단일 활성 `HR_LEAVE_APPROVER`
 
 ### 휴가
@@ -417,7 +468,7 @@ Django 서버 세션과 HttpOnly 쿠키로 관리합니다.
 
 ### 기여 문서 부분 통합 모듈
 
-본인 인사정보·개인정보 변경 요청, 게시글 작성·조회·수정·삭제, 인사평가 작성·등급·확정·본인 결과 조회,
+본인 인사정보·개인정보 수정 요청, 게시글 작성·조회·수정·삭제, 인사평가 작성·등급·확정·본인 결과 조회,
 급여 생성·항목 수정·확정·정정·조회에 대한 기존 명세를 공용 문서에 통합했습니다.
 기본 API 경로는 `/api/workforce/`, `/api/board/`, `/api/evaluations/`, `/api/payroll/`입니다.
 코드는 추가 정책과 미해결 연동 문제를 포함하므로 전체 기능의 명세 준수·배포 완료를 뜻하지 않습니다.
@@ -488,8 +539,29 @@ bun install --frozen-lockfile
 bun run build
 ```
 
-ASGI와 WSGI 진입점은 운영 settings를 기본으로 사용합니다. 배포 이미지, 도메인, TLS, reverse
-proxy와 Cloudflare Tunnel 구성은 인프라 정책이 확정된 뒤 별도로 관리합니다.
+ASGI와 WSGI 진입점은 운영 settings를 기본으로 사용합니다. 운영 배포는 **Docker rootless + Compose**의
+backend·nginx 두 컨테이너를 사용합니다. Cloudflare Tunnel은 호스트 loopback 8080으로 연결하고,
+backend는 Compose 내부에서만 접근합니다. 로컬 개발 명령과 SSH 터널은 기존 방식을 유지합니다.
+[Ubuntu EC2·빈 RDS 배포 가이드](docs/guides/ec2-rds-deployment.md)를 따릅니다.
+GitHub Actions·Secrets Manager와 운영 .env 전달 없는 경로를 준비할 때는
+[빈 Ubuntu 26.04.1 서버 준비 안내](docs/guides/github-actions-aws-deployment.md)를 먼저 확인합니다.
+현재 아래 명령은 기존 서버 환경 파일·서버 빌드 경로이며 Actions/Secret 주입 자동화는 아직 없습니다.
+
+```bash
+./scripts/prepare-production.sh /home/erp/.config/erp/compose.env --check
+./scripts/prepare-production.sh /home/erp/.config/erp/compose.env
+```
+
+Compose 2.30 이상이 필요합니다. deploy/compose.env.example과 backend/.env.production.example을
+참고해 서버에서 환경 파일을 준비합니다. 첫 명령은 daemon 없이 Compose 구성을 검사하고, 두 번째는
+rootless daemon에서 이미지 빌드·일회성 Django/nginx 검사를 수행합니다. migration·서비스 시작은
+자동 실행하지 않습니다. 빈 RDS는 legacy state-only migration 때문에 baseline 스키마 이관이 먼저입니다.
+
+운영 설정의 `DJANGO_CSRF_TRUSTED_ORIGINS`는 실제 HTTPS origin,
+`DJANGO_SECURE_HSTS_SECONDS`는 기본 3600초입니다. `DB_SSLMODE`는 기본 verify-full,
+`DB_CONNECT_TIMEOUT`은 기본 5초입니다. Compose가 호스트 RDS CA 파일을 읽기 전용 마운트하고
+`DB_SSLROOTCERT=/run/rds/ca.pem`으로 설정합니다. Django 정적 파일과 frontend 빌드는 nginx 이미지에
+포함합니다. nginx는 X-Forwarded-Proto를 덮어쓰고 backend 포트는 호스트에 공개하지 않습니다.
 
 ## 보안 원칙
 

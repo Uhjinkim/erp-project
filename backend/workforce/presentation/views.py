@@ -9,6 +9,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shared.infrastructure.reference_cache import reference_list
 from workforce.application.history import (
     CancellationCommand,
     CorrectionCommand,
@@ -334,23 +335,45 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return Response(EmployeeRoleSerializer(assignment).data)
 
 
-class DepartmentViewSet(viewsets.ModelViewSet):
+class ReferenceListMixin:
+    """Cache only the shared display list after DRF authentication/permissions."""
+
+    reference_resource: str
+
+    def list(self, request: Request, *args: object, **kwargs: object) -> Response:
+        # Preserve arbitrary filtering/formatting requests rather than sharing their results.
+        if request.query_params:
+            return super().list(request, *args, **kwargs)
+
+        def load() -> list:
+            queryset = self.filter_queryset(self.get_queryset())
+            return list(self.get_serializer(queryset, many=True).data)
+
+        return Response(reference_list(self.reference_resource, load))
+
+
+class DepartmentViewSet(ReferenceListMixin, viewsets.ModelViewSet):
+    reference_resource = "workforce:departments"
+
     queryset = Department.objects.select_related("parent", "head").all()
     serializer_class = DepartmentSerializer
     permission_classes = [IsAuthenticated, IsHRManagerOrReadOnly]
 
 
-class PositionViewSet(viewsets.ModelViewSet):
+class PositionViewSet(ReferenceListMixin, viewsets.ModelViewSet):
+    reference_resource = "workforce:positions"
     queryset = Position.objects.all()
     serializer_class = PositionSerializer
     permission_classes = [IsAuthenticated, IsHRManagerOrReadOnly]
 
 
 class RoleViewSet(
+    ReferenceListMixin,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
+    reference_resource = "workforce:roles"
     queryset = Role.objects.all()
     serializer_class = RoleSerializer
     permission_classes = [IsAuthenticated]

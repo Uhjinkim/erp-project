@@ -1,10 +1,10 @@
 import { describe, expect, mock, test } from "bun:test"
-import { availableActions, canResubmit, filterRequests, formFromRequest, requestIdFromSearch, snapshotChanges, transportInput, validateInput } from "../src/features/vacation/model"
+import { availableActions, canResubmit, filterRequests, formFromRequest, formWithVacationType, requestIdFromSearch, snapshotChanges, transportInput, validateInput } from "../src/features/vacation/model"
 import type { VacationHistory, VacationRequest, VacationSnapshot } from "../src/types/vacation"
 
 mock.module("../src/config/environment", () => ({ environment: { apiBaseUrl: "", apiTimeoutMs: 1000, authMode: "session" } }))
 const { loadVacationData } = await import("../src/features/vacation/data")
-const item: VacationRequest = { request_id: 12, employee_no: 1001, approver_no: 2001, type_id: "ANNUAL", start_datetime: "2026-10-20T00:00:00Z", end_datetime: "2026-10-20T09:00:00Z", use_days: 1, status: "대기", approved_at: null, reject_reason: null, request_reason: "개인 일정" }
+const item: VacationRequest = { request_id: 12, employee_no: 1001, approver_no: 2001, type_id: "ANNUAL", start_datetime: "2026-10-20T00:00:00.000Z", end_datetime: "2026-10-20T09:00:00.000Z", use_days: 1, status: "대기", approved_at: null, reject_reason: null, request_reason: "개인 일정" }
 
 describe("vacation UI contracts", () => {
   test("direct request links reject ambiguous or unsafe identifiers", () => {
@@ -27,8 +27,29 @@ describe("vacation UI contracts", () => {
     expect(new Date(transportInput(form).start_datetime).getTime()).toBe(new Date(item.start_datetime).getTime())
     expect(form.use_days).toBe("1")
     expect(form.reason).toBe("개인 일정")
-    const seconds = { ...item, start_datetime: "2026-10-20T00:00:37Z" }
-    expect(new Date(transportInput(formFromRequest(seconds)).start_datetime).getTime()).toBe(new Date(seconds.start_datetime).getTime())
+  })
+  test("new requests default to Seoul today at 09:00–18:00, including near midnight", () => {
+    for (const instant of ["2026-10-28T15:59:37Z", "2026-10-29T14:59:37Z"]) {
+      const form = formFromRequest(undefined, new Date(instant))
+      expect(form.start_datetime).toBe("2026-10-29T09:00")
+      expect(form.end_datetime).toBe("2026-10-29T18:00")
+    }
+  })
+  test("request and resubmit transport always drop seconds and milliseconds", () => {
+    const seconds = { ...item, start_datetime: "2026-10-20T00:15:37.123Z", end_datetime: "2026-10-20T09:30:59.999Z" }
+    const form = formFromRequest(seconds)
+    expect(form.start_datetime).toBe("2026-10-20T09:15")
+    expect(form.end_datetime).toBe("2026-10-20T18:30")
+    const expected = { ...form, start_datetime: "2026-10-20T00:15:00.000Z", end_datetime: "2026-10-20T09:30:00.000Z" }
+    expect(transportInput(form)).toEqual(expected)
+    expect(transportInput({ ...form, start_datetime: seconds.start_datetime, end_datetime: seconds.end_datetime })).toEqual(expected)
+  })
+  test("start times before 09:00 are rejected on any selected date", () => {
+    const form = { ...formFromRequest(item), end_datetime: "2027-01-01T18:00" }
+    for (const date of ["2026-10-29", "2027-01-01"]) {
+      for (const time of ["00:00", "08:59"]) expect(validateInput({ ...form, start_datetime: `${date}T${time}` }).start_datetime).toBeDefined()
+      for (const time of ["09:00", "13:30"]) expect(validateInput({ ...form, start_datetime: `${date}T${time}` })).toEqual({})
+    }
   })
   test("form validates transport bounds without inventing duration policies", () => {
     const form = formFromRequest(item)
@@ -66,4 +87,29 @@ describe("vacation UI contracts", () => {
     expect(mine).toHaveBeenCalledTimes(1)
     expect(history).toHaveBeenCalledTimes(1)
   })
+})
+
+
+test("balance reads share the initial types request and are limited to request forms", async () => {
+  const types = mock(async () => [{ type_id: "ANNUAL", type_name: "연차", is_paid: true, deduct_days: 1, remaining_days: "3.50" }])
+  const api = { types, mine: mock(async () => []), approvals: mock(async () => []), history: mock(async () => []) }
+  const result = await loadVacationData(1001, "leave-apply", null, api)
+  expect(types).toHaveBeenLastCalledWith(1001, true)
+  expect(types).toHaveBeenCalledTimes(1)
+  expect(api.mine).toHaveBeenCalledTimes(0)
+  expect(api.approvals).toHaveBeenCalledTimes(0)
+  expect(result.types[0].remaining_days).toBe("3.50")
+  await loadVacationData(1001, "leave-resubmit", 12, api)
+  expect(types).toHaveBeenLastCalledWith(1001, true)
+  await loadVacationData(1001, "leave-mine", null, api)
+  expect(types).toHaveBeenLastCalledWith(1001, false)
+})
+
+
+test("type selection uses the supplied day unit while retaining the schedule and reason", () => {
+  const form = formFromRequest(item)
+  const half = formWithVacationType(form, { type_id: "HALF", type_name: "반차", deduct_days: "0.50", is_paid: true })
+  expect(half).toEqual({ ...form, type_id: "HALF", use_days: "0.50" })
+  expect(formWithVacationType(half, { type_id: "ANNUAL", type_name: "연차", deduct_days: 1, is_paid: true }).use_days).toBe("1.00")
+  expect(formWithVacationType(half, { type_id: "SICK", type_name: "병가", deduct_days: 0, is_paid: true }).use_days).toBe("0.50")
 })
