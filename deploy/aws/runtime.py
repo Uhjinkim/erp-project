@@ -196,16 +196,28 @@ def operate(action, config, env):
         "--fail-level",
         "WARNING",
     )
-    # Read-only schema/connection check: never initialize or migrate the shared RDS.
-    code = (
-        "from django.db import connection; "
-        "from django.apps import apps; "
-        "tables=set(connection.introspection.table_names()); "
-        "required={m._meta.db_table for m in apps.get_models() if m._meta.managed}; "
-        "missing=required-tables; "
-        "print('Schema ready' if not missing else 'Schema baseline required'); "
-        "raise SystemExit(bool(missing))"
+    cache_check = (
+        "import os, redis; "
+        "client=redis.Redis.from_url(os.environ['REDIS_URL'], "
+        "socket_connect_timeout=3, socket_timeout=3); "
+        "client.ping(); print('Valkey TLS ready')"
     )
+    run("run", "--rm", "--no-deps", "backend", "python", "-c", cache_check)
+    # Read-only schema/connection check: never initialize or migrate the shared RDS.
+    code = """
+from django.db import connection, DatabaseError
+from django.apps import apps
+try:
+    tables = set(connection.introspection.table_names())
+except DatabaseError as error:
+    authentication = 'password authentication failed' in str(error)
+    print('RDS authentication failed' if authentication else 'RDS connection check failed')
+    raise SystemExit(1)
+required = {m._meta.db_table for m in apps.get_models() if m._meta.managed}
+missing = required - tables
+print('Schema ready' if not missing else 'Schema baseline required')
+raise SystemExit(bool(missing))
+"""
     run("run", "--rm", "--no-deps", "backend", "python", "manage.py", "shell", "-c", code)
     if action == "preflight":
         return

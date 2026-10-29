@@ -9,5 +9,5 @@
   "db_name": "erp-db",
   "db_user": "erp",
   "redis_url": "rediss://erp-cache-cluster-0001-001.erp-cache-cluster.zcul17.apn2.cache.amazonaws.com:6379/0",
-  "rds_ca_file": "/etc/erp/rds-global-bundle.pem"
+  "rds_ca_file": "/home/erp/.config/erp/rds-global-bundle.pem"
 }

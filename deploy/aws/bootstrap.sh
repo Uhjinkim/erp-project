@@ -16,8 +16,9 @@ install -d -m 0755 -o erp -g erp /srv/erp /srv/erp/releases
 install -d -m 0700 -o erp -g erp /home/erp/.config/systemd/user
 install -m 0644 -o erp -g erp "$root_dir/erp.service" /home/erp/.config/systemd/user/erp.service
 loginctl enable-linger erp
-curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /etc/erp/rds-global-bundle.pem
-chmod 0444 /etc/erp/rds-global-bundle.pem
+install -d -m 0700 -o erp -g erp /home/erp/.config/erp
+curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /home/erp/.config/erp/rds-global-bundle.pem
+chmod 0444 /home/erp/.config/erp/rds-global-bundle.pem
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 if ! command -v aws >/dev/null; then

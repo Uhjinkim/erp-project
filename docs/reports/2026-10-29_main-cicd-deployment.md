@@ -44,3 +44,8 @@ Git dev/main 반영, GitHub CI/CD 실제 실행 결과, RDS 연결·schema readi
 - 임시 ECR DOCKER_CONFIG가 rootless context 선택을 지우는 경우를 확인하고 socket을 명시했다.
   이 환경변수 조합에 대한 회귀 테스트를 추가했다. Provider token 0600/부모 0700과
   root 소유 launcher/비밀 없는 설정 파일 권한을 확인하고 staging 인증서는 정리했다.
+- OIDC 수정 후 ECR 이미지 두 개 build/push와 S3/SSM 전달까지 성공. 첫 컨테이너 검사에서
+  rootlesskit `/etc` copy-up 때문에 새 CA bind source가 안 보여 사용자 home으로 옮겼다.
+- 수정 후 실제 컨테이너의 production `check --deploy --fail-level WARNING` 통과.
+  RDS까지 TCP/TLS 연결은 도달했지만 `erp` 계정의 password authentication 실패.
+  계정 존재·Secret 비밀번호의 계정 대응을 사용자에게 확인 요청했다. DB 쓰기는 수행하지 않았다.

@@ -63,6 +63,7 @@ image·command arguments·보고서에 저장하지 않는다. Compose에는 허
 Docker 운영자는 inspect로 환경변수를 볼 수 있으므로 erp 계정 접근을 제한한다.
 ECR 로그인 password는 stdin으로 전달하고 임시 Docker 인증 디렉터리는 작업 후 삭제한다.
 임시 DOCKER_CONFIG가 사용자 context 설정을 가리지 않도록 rootless 소켓을 DOCKER_HOST로 명시한다.
+CA bind mount는 rootlesskit의 `/etc` copy-up과 충돌하지 않는 `/home/erp/.config/erp/` 아래에 둔다.
 재부팅 후에도 로그인·Secret 조회를 다시 수행한다. stop은 Secret/API 장애 중에도 가능하다.
 
 기존 Django 키는 길이 검사에 실패해 별도 Secret에 새 키를 생성했다. 원래 Secret의 비밀번호나
