@@ -40,7 +40,8 @@ class LeaveRequestModel(models.Model):
     end_datetime = models.DateTimeField()
     use_days = models.DecimalField(max_digits=3, decimal_places=2)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
-    approver_no = models.IntegerField()
+    # 대기 중 null이면 특정 개인이 아닌 인사관리자 공용 승인 대상이다.
+    approver_no = models.IntegerField(null=True, blank=True)
     approved_at = models.DateTimeField(null=True, blank=True)
     reject_reason = models.CharField(max_length=255, null=True, blank=True)
     request_reason = models.TextField(null=True, blank=True)

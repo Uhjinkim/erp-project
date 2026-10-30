@@ -15,11 +15,20 @@ describe("vacation UI contracts", () => {
     expect(availableActions(item, 1001)).toEqual(["cancel"])
     expect(availableActions(item, 2001)).toEqual(["approve", "reject"])
     expect(availableActions(item, 9001)).toEqual([])
+    expect(availableActions(item, 9001, true)).toEqual([])
     expect(availableActions({ ...item, status: "승인" }, 2001)).toEqual(["recall"])
     for (const status of ["반려", "취소", "회수"] as const) expect(availableActions({ ...item, status }, 2001)).toEqual([])
     expect(canResubmit({ ...item, status: "회수" }, 1001)).toBe(true)
     expect(canResubmit({ ...item, status: "회수" }, 2001)).toBe(false)
     expect(canResubmit({ ...item, status: "반려" }, 1001)).toBe(false)
+  })
+  test("HR managers share the unassigned HR queue until one records a decision", () => {
+    const shared = { ...item, approver_no: null }
+    expect(availableActions(shared, 9001, true)).toEqual(["approve", "reject"])
+    expect(availableActions(shared, 9002, true)).toEqual(["approve", "reject"])
+    expect(availableActions(shared, 2001)).toEqual([])
+    expect(availableActions({ ...shared, status: "취소" }, 9001, true)).toEqual([])
+    expect(availableActions({ ...shared, approver_no: 9001, status: "승인" }, 9002, true)).toEqual([])
   })
   test("resubmit retains dates and decimal data; transport is ISO", () => {
     const form = formFromRequest(item)

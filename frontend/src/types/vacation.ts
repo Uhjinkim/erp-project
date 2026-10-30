@@ -16,7 +16,7 @@ export type VacationRequest = {
   end_datetime: string
   use_days: VacationDecimal
   status: VacationStatus
-  approver_no: number
+  approver_no: number | null
   approved_at: string | null
   reject_reason: string | null
   request_reason: string | null
@@ -37,7 +37,7 @@ export type VacationSnapshot = {
   start_datetime: string
   end_datetime: string
   use_days: VacationDecimal
-  approver_no: number
+  approver_no: number | null
   request_reason: string | null
   approved_at: string | null
   reject_reason: string | null

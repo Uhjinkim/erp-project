@@ -7,8 +7,8 @@ import type { VacationHref } from "../navigation"
 import { StatusBadge } from "./RequestSummary"
 import styles from "../vacation.module.css"
 
-export function RequestList({ items, types, employeeNo, search, screen, href, onRefresh }: {
-  items: VacationRequest[]; types: VacationType[]; employeeNo: number; search: string; screen: string; href: VacationHref; onRefresh: () => void
+export function RequestList({ items, types, employeeNo, isHRManager = false, search, screen, href, onRefresh }: {
+  items: VacationRequest[]; types: VacationType[]; employeeNo: number; isHRManager?: boolean; search: string; screen: string; href: VacationHref; onRefresh: () => void
 }) {
   const current = new URLSearchParams(search)
   const [filter, setFilter] = useState(() => Object.fromEntries(["status", "type", "q", "from", "to"].map((key) => [key, current.get(key) ?? ""])))
@@ -52,8 +52,8 @@ export function RequestList({ items, types, employeeNo, search, screen, href, on
           window.location.hash = href(screen, undefined, query)
         }}>신청번호 {current.get("order") === "asc" ? "↑" : "↓"}</Button></th><th scope="col">신청자</th><th scope="col">유형</th><th scope="col">사용 기간</th><th scope="col">일수</th><th scope="col">승인자</th><th scope="col">상태</th><th scope="col">작업</th></tr></thead>
         <tbody>{rows.map((item) => {
-          const actions = availableActions(item, employeeNo)
-          return <tr key={item.request_id}><td><a href={href("leave-detail", item.request_id)}>LV-{item.request_id}</a></td><td>{item.employee_no}</td><td>{typeName(item.type_id, types)}</td><td>{displayDateTime(item.start_datetime)}<br />{displayDateTime(item.end_datetime)}</td><td>{item.use_days}일</td><td>{item.approver_no}</td><td><StatusBadge status={item.status} /></td><td><div className={styles.row}>
+          const actions = availableActions(item, employeeNo, isHRManager)
+          return <tr key={item.request_id}><td><a href={href("leave-detail", item.request_id)}>LV-{item.request_id}</a></td><td>{item.employee_no}</td><td>{typeName(item.type_id, types)}</td><td>{displayDateTime(item.start_datetime)}<br />{displayDateTime(item.end_datetime)}</td><td>{item.use_days}일</td><td>{item.approver_no ?? "인사 관리자 공용 승인"}</td><td><StatusBadge status={item.status} /></td><td><div className={styles.row}>
             <a href={href("leave-detail", item.request_id)}>상세</a>
             {actions.includes("cancel") && <a href={href("leave-detail", item.request_id)}>신청 취소</a>}
             {actions.includes("approve") && <a href={href("leave-approve", item.request_id)}>승인·반려</a>}

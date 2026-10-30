@@ -35,22 +35,28 @@ class VacationRequest:
     period: VacationPeriod
     use_days: UseDays
     status: VacationStatus
-    approver_no: int
+    approver_no: int | None
     request_reason: str | None = None
     approved_at: datetime | None = None
     reject_reason: str | None = None
     balance_deducted: bool = False
 
-    def approve(self, actor_employee_no: int, approved_at: datetime) -> None:
-        self._require_pending_approver(actor_employee_no)
+    def approve(
+        self, actor_employee_no: int, approved_at: datetime, *, is_hr_manager: bool = False
+    ) -> None:
+        self._require_pending_approver(actor_employee_no, is_hr_manager=is_hr_manager)
+        self.approver_no = actor_employee_no
         self.status = VacationStatus.APPROVED
         self.approved_at = approved_at
         self.reject_reason = None
 
-    def reject(self, actor_employee_no: int, reason: str) -> None:
-        self._require_pending_approver(actor_employee_no)
+    def reject(
+        self, actor_employee_no: int, reason: str, *, is_hr_manager: bool = False
+    ) -> None:
+        self._require_pending_approver(actor_employee_no, is_hr_manager=is_hr_manager)
         if not reason.strip():
             raise InvalidStatusTransitionError("반려 사유는 필수입니다.")
+        self.approver_no = actor_employee_no
         self.status = VacationStatus.REJECTED
         self.reject_reason = reason.strip()
 
@@ -74,7 +80,7 @@ class VacationRequest:
         type_id: str,
         period: VacationPeriod,
         use_days: UseDays,
-        approver_no: int,
+        approver_no: int | None,
         request_reason: str | None,
     ) -> None:
         self._require_owner(actor_employee_no)
@@ -87,8 +93,12 @@ class VacationRequest:
         self.reject_reason = None
         self.status = VacationStatus.PENDING
 
-    def _require_pending_approver(self, actor_employee_no: int) -> None:
-        if actor_employee_no != self.approver_no:
+    def _require_pending_approver(
+        self, actor_employee_no: int, *, is_hr_manager: bool = False
+    ) -> None:
+        if actor_employee_no != self.approver_no and not (
+            self.approver_no is None and is_hr_manager
+        ):
             raise VacationPermissionError("현재 승인자만 처리할 수 있습니다.")
         self._require_status(VacationStatus.PENDING)
 

@@ -14,6 +14,9 @@ class WorkforceGateway(ABC):
     @abstractmethod
     def is_hr_manager(self, employee_no: int) -> bool: ...
 
+    @abstractmethod
+    def has_hr_managers(self) -> bool: ...
+
 
 class LeaveBalanceGateway(ABC):
     @abstractmethod

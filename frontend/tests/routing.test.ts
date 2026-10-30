@@ -72,7 +72,8 @@ describe("role-specific navigation", () => {
     expect(menu(user([], true), "vacation")).toContain("leave-queue")
     expect(menu(user(["HR_MANAGER"], true), "evaluation")).toEqual(["evaluation-team", "evaluation-hr", "evaluation-mine"])
     expect(menu(user(["HR_MANAGER"]), "profile")).toContain("change-queue")
-    expect(menu(user(["HR_LEAVE_APPROVER"]), "vacation")).toContain("leave-queue")
+    expect(menu(user(["HR_MANAGER"]), "vacation")).toContain("leave-queue")
+    expect(menu(user(["HR_LEAVE_APPROVER"]), "vacation")).not.toContain("leave-queue")
     expect(visibleModules(user(["HR_MANAGER"])).find((module) => module.id === "evaluation")!.entry).toBe("evaluation-hr")
     for (const viewer of [user(["PAYROLL_MANAGER"]), user(["PAYROLL_MANAGER"], false, true)]) {
       expect(menu(viewer, "payroll")).toHaveLength(5)

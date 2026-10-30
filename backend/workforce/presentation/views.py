@@ -374,7 +374,7 @@ class RoleViewSet(
     viewsets.GenericViewSet,
 ):
     reference_resource = "workforce:roles"
-    queryset = Role.objects.all()
+    queryset = Role.objects.exclude(role_code="HR_LEAVE_APPROVER")
     serializer_class = RoleSerializer
     permission_classes = [IsAuthenticated]
 

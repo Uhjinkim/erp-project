@@ -100,6 +100,16 @@ describe("employment form", () => {
     expect("emp_no" in payload).toBe(false)
   })
 
+  test("ordinary employees need no additional role, independently of account creation", () => {
+    for (const create_account of [false, true]) {
+      const form = { ...filled, role_codes: [], create_account, password: "synthetic-pass" }
+      expect(model.validateEmploymentForm(form, "create")).toEqual({})
+      expect(model.toNewHirePayload(form).role_codes).toEqual([])
+      expect(model.toRehirePayload(form).role_codes).toEqual([])
+      expect(model.toNewHirePayload(form).account).toEqual(create_account ? { password: "synthetic-pass" } : null)
+    }
+  })
+
   test("rehire keeps existing person values unless the HR manager enters them", () => {
     const rehire = { ...filled, name: "", birth_date: "", gender: "" as const }
     expect(model.validateEmploymentForm(rehire, "rehire")).toEqual({})

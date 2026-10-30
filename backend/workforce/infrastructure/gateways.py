@@ -107,7 +107,7 @@ class DjangoWorkforceQueryGateway:
         head = employee.department.head
         return EmployeeCandidate(head.employee_no, head.is_active_employee)
 
-    def active_role_holders(self, role_code: str, *, limit: int) -> list[EmployeeCandidate]:
+    def active_role_holders(self, role_code: str) -> list[EmployeeCandidate]:
         now = timezone.now()
         employees = (
             Employee.objects.filter(
@@ -119,7 +119,7 @@ class DjangoWorkforceQueryGateway:
                 | Q(role_assignments__revoked_at__gt=now)
             )
             .distinct()
-            .order_by("employee_no")[:limit]
+            .order_by("employee_no")
         )
         return [EmployeeCandidate(item.employee_no, item.is_active_employee) for item in employees]
 

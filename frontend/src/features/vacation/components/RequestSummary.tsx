@@ -15,7 +15,7 @@ export function RequestSummary({ item, types }: { item: VacationRequest; types: 
       { key: "start", label: "시작 일시", value: displayDateTime(item.start_datetime) },
       { key: "end", label: "종료 일시", value: displayDateTime(item.end_datetime) },
       { key: "days", label: "사용 일수", value: `${item.use_days}일` },
-      { key: "approver", label: "승인자 사번", value: item.approver_no },
+      { key: "approver", label: "승인 담당", value: item.approver_no ?? "인사 관리자 공용 승인" },
       { key: "status", label: "현재 상태", value: <StatusBadge status={item.status} /> },
       { key: "approved", label: "승인 일시", value: displayDateTime(item.approved_at) },
     ]} />

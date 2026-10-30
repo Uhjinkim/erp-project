@@ -6,10 +6,10 @@ VACATION_DEVELOPMENT_EMPLOYEES = {
         "roles": [],
         "balances": {"ANNUAL": 7.5},
     },
-    "2001": {"active": True, "approver_no": 9001, "roles": [], "balances": {"ANNUAL": 12}},
+    "2001": {"active": True, "approver_no": None, "roles": [], "balances": {"ANNUAL": 12}},
     "9001": {
         "active": True,
-        "approver_no": 9001,
+        "approver_no": None,
         "roles": ["HR_MANAGER"],
         "balances": {"ANNUAL": 20},
     },

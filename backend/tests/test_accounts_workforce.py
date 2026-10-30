@@ -8,10 +8,10 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from vacation.infrastructure.models import LeaveBalanceModel, LeaveTypeModel
 from workforce.application.services import (
-    HR_LEAVE_APPROVER_ROLE,
     HR_MANAGER_ROLE,
     employee_has_role,
     get_employee_profile,
+    has_vacation_hr_approvers,
     resolve_vacation_approver,
 )
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
@@ -167,13 +167,13 @@ def test_inactive_employee_cannot_login() -> None:
 
 
 @pytest.mark.django_db
-def test_hr_leave_approver_is_used_when_department_has_no_head() -> None:
+def test_hr_manager_pool_is_used_when_department_has_no_head() -> None:
     department = Department.objects.create(dept_no=10, dept_name="개발팀")
     applicant = create_employee(1001, "applicant@example.com", department=department)
     hr_employee = create_employee(9001, "hr@example.com")
     role = Role.objects.create(
-        role_code=HR_LEAVE_APPROVER_ROLE,
-        role_name="휴가 승인 인사담당자",
+        role_code=HR_MANAGER_ROLE,
+        role_name="인사 관리자",
     )
     EmployeeRole.objects.create(
         employee=hr_employee,
@@ -183,7 +183,8 @@ def test_hr_leave_approver_is_used_when_department_has_no_head() -> None:
 
     assert resolve_vacation_approver(
         applicant.employee_no, DjangoWorkforceQueryGateway()
-    ) == hr_employee.employee_no
+    ) is None
+    assert has_vacation_hr_approvers(DjangoWorkforceQueryGateway()) is True
 
 
 @pytest.mark.django_db

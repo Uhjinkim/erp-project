@@ -58,10 +58,9 @@ class VacationService:
     def list_approvals(self, employee_no: int) -> list[VacationRequest]:
         self._ensure_active(employee_no)
         with self.unit_of_work_factory() as uow:
-            requests = uow.requests.list_for_approver(employee_no)
-            if self.workforce.is_hr_manager(employee_no):
-                return requests
-            return [request for request in requests if request.approver_no == employee_no]
+            return uow.requests.list_for_approver(
+                employee_no, include_hr_queue=self.workforce.is_hr_manager(employee_no)
+            )
 
     def cancel(self, request_id: int, employee_no: int) -> VacationRequest:
         return self._transition(
@@ -73,12 +72,17 @@ class VacationService:
             request_id,
             employee_no,
             None,
-            lambda item: item.approve(employee_no, self.clock()),
+            lambda item: item.approve(
+                employee_no, self.clock(), is_hr_manager=self.workforce.is_hr_manager(employee_no)
+            ),
         )
 
     def reject(self, request_id: int, employee_no: int, reason: str) -> VacationRequest:
         return self._transition(
-            request_id, employee_no, reason, lambda item: item.reject(employee_no, reason)
+            request_id, employee_no, reason,
+            lambda item: item.reject(
+                employee_no, reason, is_hr_manager=self.workforce.is_hr_manager(employee_no)
+            ),
         )
 
     def recall(self, request_id: int, employee_no: int, reason: str) -> VacationRequest:
@@ -208,9 +212,9 @@ class VacationService:
         if not self.workforce.is_active_employee(employee_no):
             raise InactiveEmployeeError("재직 중인 사원만 휴가 기능을 사용할 수 있습니다.")
 
-    def _resolve_approver(self, employee_no: int) -> int:
+    def _resolve_approver(self, employee_no: int) -> int | None:
         approver = self.workforce.resolve_vacation_approver(employee_no)
-        if approver is None:
+        if approver is None and not self.workforce.has_hr_managers():
             raise ApproverNotFoundError("휴가 승인자를 결정할 수 없습니다.")
         return approver
 

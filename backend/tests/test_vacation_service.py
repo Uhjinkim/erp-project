@@ -35,8 +35,12 @@ class FakeRequests(VacationRequestRepository):
     def list_for_employee(self, employee_no: int) -> list[VacationRequest]:
         return [item for item in self.items.values() if item.employee_no == employee_no]
 
-    def list_for_approver(self, employee_no: int) -> list[VacationRequest]:
-        return [item for item in self.items.values() if item.approver_no == employee_no]
+    def list_for_approver(
+        self, employee_no: int, *, include_hr_queue: bool = False
+    ) -> list[VacationRequest]:
+        return [item for item in self.items.values() if item.approver_no == employee_no or (
+            include_hr_queue and item.approver_no is None and item.status == VacationStatus.PENDING
+        )]
 
 
 class FakeHistories(VacationHistoryRepository):
@@ -82,6 +86,9 @@ class FakeWorkforce(WorkforceGateway):
         return 2001
 
     def is_hr_manager(self, employee_no: int) -> bool:
+        return False
+
+    def has_hr_managers(self) -> bool:
         return False
 
 

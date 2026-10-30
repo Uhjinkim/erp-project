@@ -27,6 +27,12 @@ class SettingsWorkforceGateway(WorkforceGateway):
     def is_hr_manager(self, employee_no: int) -> bool:
         return "HR_MANAGER" in self._employees().get(str(employee_no), {}).get("roles", [])
 
+    def has_hr_managers(self) -> bool:
+        return any(
+            self.is_active_employee(int(number)) and self.is_hr_manager(int(number))
+            for number in self._employees()
+        )
+
 
 class SettingsLeaveBalanceGateway(LeaveBalanceGateway):
     """Temporary adapter; None means that the type has no balance restriction."""

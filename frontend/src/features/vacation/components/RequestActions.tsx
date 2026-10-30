@@ -10,15 +10,15 @@ import styles from "../vacation.module.css"
 
 const labels: Record<VacationAction, string> = { cancel: "신청 취소", approve: "승인", reject: "반려", recall: "승인 회수" }
 
-export function RequestActions({ item, types, employeeNo, href, screen, onRefresh, onProcessed }: {
-  item: VacationRequest; types: VacationType[]; employeeNo: number; href: VacationHref; screen: string; onRefresh: () => void; onProcessed: (item: VacationRequest) => void
+export function RequestActions({ item, types, employeeNo, isHRManager = false, href, screen, onRefresh, onProcessed }: {
+  item: VacationRequest; types: VacationType[]; employeeNo: number; isHRManager?: boolean; href: VacationHref; screen: string; onRefresh: () => void; onProcessed: (item: VacationRequest) => void
 }) {
   const mutation = useVacationMutation()
   const current = mutation.saved ?? item
   const [action, setAction] = useState<VacationAction | null>(null)
   const [reason, setReason] = useState("")
   const [reasonError, setReasonError] = useState("")
-  const actions = availableActions(current, employeeNo).filter((value) => screen === "leave-approve" ? value === "approve" || value === "reject" : screen === "leave-recall" ? value === "recall" : true)
+  const actions = availableActions(current, employeeNo, isHRManager).filter((value) => screen === "leave-approve" ? value === "approve" || value === "reject" : screen === "leave-recall" ? value === "recall" : true)
   const needsReason = action === "reject" || action === "recall"
   async function confirm() {
     if (!action || !actions.includes(action)) return

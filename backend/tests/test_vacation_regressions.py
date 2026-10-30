@@ -143,6 +143,94 @@ def test_lv004_department_head_is_approved_by_parent_head(vacation):
     assert service.workforce.resolve_vacation_approver(2001) == 3001
 
 
+@pytest.fixture
+def hr_queue(vacation):
+    from workforce.infrastructure.models import EmployeeRole, Role
+
+    service, balance = vacation
+    department = balance.employee.department
+    department.head = None
+    department.save(update_fields=["head"])
+    role = Role.objects.create(role_code="HR_MANAGER", role_name="인사 관리자")
+    managers = [employee(number, department) for number in (9001, 9002)]
+    for manager in managers:
+        EmployeeRole.objects.create(employee=manager, role=role, assigned_at=timezone.now())
+    return service, balance, managers
+
+
+@override_settings(VACATION_INTEGRATION_MODE="database")
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_lv004_all_hr_managers_share_queue_but_only_first_decision_is_saved(hr_queue, action):
+    from accounts.models import User
+
+    _, balance, managers = hr_queue
+    client = APIClient()
+    users = {
+        person.employee_no: User.objects.create_user(email=person.email, employee=person)
+        for person in [balance.employee, *managers]
+    }
+    client.force_authenticate(users[1001])
+    response = client.post("/api/vacations/requests/", {
+        "type_id": "ANNUAL", "start_datetime": "2026-10-03T09:00:00+09:00",
+        "end_datetime": "2026-10-03T18:00:00+09:00", "use_days": "1.00",
+    }, format="json")
+    assert response.status_code == 201
+    assert response.json()["approver_no"] is None
+    number = response.json()["request_id"]
+    url = f"/api/vacations/requests/{number}/{action}/"
+    payload = {"reason": "일정 조정"} if action == "reject" else {}
+    assert client.get("/api/vacations/approvals/").json() == []
+    assert client.post(url, payload, format="json").status_code == 403
+    for manager in managers:
+        client.force_authenticate(users[manager.employee_no])
+        assert [row["request_id"] for row in client.get(
+            "/api/vacations/approvals/"
+        ).json()] == [number]
+    # 두 번째 인사관리자도 별도 휴가 승인 역할 없이 처리할 수 있다.
+    saved = client.post(url, payload, format="json")
+    assert saved.status_code == 200
+    assert saved.json()["approver_no"] == 9002
+    client.force_authenticate(users[9001])
+    assert client.post(url, payload, format="json").status_code == 403
+    assert client.get("/api/vacations/approvals/").json() == []
+    history = client.get(f"/api/vacations/requests/{number}/history/").json()
+    assert len(history) == 2
+    assert history[-1]["actor_employee_no"] == 9002
+    balance.refresh_from_db()
+    assert balance.remaining_days == (0 if action == "approve" else 1)
+
+
+def test_lv004_resubmission_recalculates_hr_queue_and_actual_approver_recall(hr_queue):
+    from vacation.domain.exceptions import VacationPermissionError
+
+    service, _balance, _managers = hr_queue
+    item = service.request_vacation(command())
+    assert item.approver_no is None
+    service.approve(item.request_id, 9002)
+    with pytest.raises(VacationPermissionError):
+        service.recall(item.request_id, 9001, "다른 관리자")
+    service.recall(item.request_id, 9002, "일정 정정")
+    saved = service.resubmit(ResubmitVacationCommand(
+        item.request_id, 1001, "ANNUAL", datetime(2026, 10, 3, tzinfo=UTC),
+        datetime(2026, 10, 4, tzinfo=UTC), Decimal("0.50"), "정정 신청"
+    ))
+    assert saved.approver_no is None
+    assert service.list_approvals(9001)[0].request_id == item.request_id
+    service.approve(item.request_id, 9001)
+
+
+def test_lv004_without_department_head_or_active_hr_cannot_submit(vacation):
+    from vacation.domain.exceptions import ApproverNotFoundError
+
+    service, balance = vacation
+    department = balance.employee.department
+    department.head = None
+    department.save(update_fields=["head"])
+    with pytest.raises(ApproverNotFoundError):
+        service.request_vacation(command())
+    assert LeaveRequestModel.objects.count() == 0
+
+
 def test_lv001_approval_rechecks_and_consumes_balance(vacation):
     from vacation.domain.exceptions import InsufficientLeaveDaysError
 

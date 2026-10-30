@@ -32,6 +32,25 @@ def test_only_current_approver_can_approve_pending_request() -> None:
     assert item.approved_at is not None
 
 
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_lv004_hr_queue_requires_hr_role_and_records_actual_actor(action: str) -> None:
+    item = request()
+    item.approver_no = None
+    args = (9002, datetime.now(UTC)) if action == "approve" else (9002, "일정 조정")
+    with pytest.raises(VacationPermissionError):
+        getattr(item, action)(*args)
+    assert item.approver_no is None
+    getattr(item, action)(*args, is_hr_manager=True)
+    assert item.approver_no == 9002
+    with pytest.raises(VacationPermissionError):
+        getattr(item, action)(9001, args[1], is_hr_manager=True)
+
+
+def test_hr_role_does_not_override_named_department_approver() -> None:
+    with pytest.raises(VacationPermissionError):
+        request().approve(9001, datetime.now(UTC), is_hr_manager=True)
+
+
 def test_employee_can_cancel_only_pending_own_request() -> None:
     with pytest.raises(VacationPermissionError):
         request().cancel(1002)

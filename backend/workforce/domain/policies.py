@@ -59,7 +59,6 @@ def choose_vacation_approver(
     *,
     applicant_no: int,
     department_head: EmployeeCandidate | None,
-    hr_approvers: list[EmployeeCandidate],
 ) -> int | None:
     if (
         department_head is not None
@@ -68,5 +67,5 @@ def choose_vacation_approver(
     ):
         return department_head.employee_no
 
-    active_hr_approvers = [candidate for candidate in hr_approvers if candidate.is_active]
-    return active_hr_approvers[0].employee_no if len(active_hr_approvers) == 1 else None
+    # None은 개인 부서장 승인 대상이 없음을 뜻한다. 인사관리자 공용 승인함은 별도 판정한다.
+    return None

@@ -8,6 +8,7 @@ from vacation.infrastructure.models import LeaveBalanceModel, LeaveTypeModel
 from workforce.application.services import (
     HR_MANAGER_ROLE,
     employee_has_role,
+    has_vacation_hr_approvers,
     resolve_vacation_approver,
 )
 from workforce.infrastructure.gateways import DjangoWorkforceQueryGateway
@@ -34,6 +35,9 @@ class DjangoWorkforceGateway(WorkforceGateway):
 
     def is_hr_manager(self, employee_no: int) -> bool:
         return employee_has_role(employee_no, HR_MANAGER_ROLE, DjangoWorkforceQueryGateway())
+
+    def has_hr_managers(self) -> bool:
+        return has_vacation_hr_approvers(DjangoWorkforceQueryGateway())
 
 
 class DjangoLeaveBalanceGateway(LeaveBalanceGateway):

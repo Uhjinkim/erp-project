@@ -55,10 +55,10 @@ export function transportInput(input: VacationInput): VacationInput {
 }
 
 // UI guidance for LV-005~007; the server remains responsible for authorization.
-export function availableActions(item: VacationRequest, employeeNo: number): VacationAction[] {
+export function availableActions(item: VacationRequest, employeeNo: number, isHRManager = false): VacationAction[] {
   const actions: VacationAction[] = []
   if (item.status === "대기" && item.employee_no === employeeNo) actions.push("cancel")
-  if (item.status === "대기" && item.approver_no === employeeNo) actions.push("approve", "reject")
+  if (item.status === "대기" && (item.approver_no === employeeNo || (item.approver_no === null && isHRManager))) actions.push("approve", "reject")
   if (item.status === "승인" && item.approver_no === employeeNo) actions.push("recall")
   return actions
 }

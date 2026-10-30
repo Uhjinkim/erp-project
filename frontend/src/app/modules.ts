@@ -16,7 +16,7 @@ export function visibleModules(user: CurrentUser | null) {
   const payrollManager = user ? isPayrollManager(user) : false
   const head = user?.is_department_head ?? false
   const profileProcessor = hr || user?.is_superuser
-  const leaveApprover = head || user?.roles.includes("HR_LEAVE_APPROVER")
+  const leaveApprover = head || hr
   return modules.filter((module) => !module.requiredRole || user?.roles.includes(module.requiredRole) || (module.allowSuperuser && user?.is_superuser))
     .map((module) => {
       const screens = module.screens.filter((screen) => {

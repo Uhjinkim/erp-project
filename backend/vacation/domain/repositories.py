@@ -19,7 +19,9 @@ class VacationRequestRepository(ABC):
     def list_for_employee(self, employee_no: int) -> list[VacationRequest]: ...
 
     @abstractmethod
-    def list_for_approver(self, employee_no: int) -> list[VacationRequest]: ...
+    def list_for_approver(
+        self, employee_no: int, *, include_hr_queue: bool = False
+    ) -> list[VacationRequest]: ...
 
 
 class VacationHistoryRepository(ABC):

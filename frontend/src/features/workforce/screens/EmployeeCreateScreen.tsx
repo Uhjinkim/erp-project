@@ -54,7 +54,7 @@ export function RegistrationResult({ result, master, title, onReset }: { result:
         { key: "org", label: "부서·직급", value: `${departmentLabel(master.departments, result.dept_no)} · ${positionLabel(master.positions, result.position_code)}` },
         { key: "hire", label: "입사일", value: result.hire_date },
         { key: "status", label: "재직 상태", value: result.tenure_status },
-        { key: "roles", label: "업무 역할", value: result.roles.length ? result.roles.map((item) => roleLabel(master.roles, item.role_code)).join(", ") : "없음" },
+        { key: "roles", label: "업무 역할", value: result.roles.length ? result.roles.map((item) => roleLabel(master.roles, item.role_code)).join(", ") : "일반 사원 (추가 업무 역할 없음)" },
         { key: "account", label: "로그인 계정", value: result.account ? `생성됨 (${result.account.email})` : "생성하지 않음" },
       ]} />
       <div className={styles.formFooter}>

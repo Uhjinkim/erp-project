@@ -174,7 +174,9 @@ class RoleSerializer(serializers.ModelSerializer):
 
 class EmployeeRoleSerializer(serializers.ModelSerializer):
     emp_no = serializers.PrimaryKeyRelatedField(source="employee", queryset=Employee.objects.all())
-    role_code = serializers.PrimaryKeyRelatedField(source="role", queryset=Role.objects.all())
+    role_code = serializers.PrimaryKeyRelatedField(
+        source="role", queryset=Role.objects.exclude(role_code="HR_LEAVE_APPROVER")
+    )
 
     class Meta:
         model = EmployeeRole

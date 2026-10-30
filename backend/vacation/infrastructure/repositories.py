@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
 
 from shared.infrastructure.reference_cache import reference_list
 from vacation.domain.entities import VacationHistory, VacationRequest, VacationType
@@ -67,10 +68,15 @@ class DjangoVacationRequestRepository(VacationRequestRepository):
             for model in LeaveRequestModel.objects.filter(employee_no=employee_no)
         ]
 
-    def list_for_approver(self, employee_no: int) -> list[VacationRequest]:
+    def list_for_approver(
+        self, employee_no: int, *, include_hr_queue: bool = False
+    ) -> list[VacationRequest]:
+        criteria = Q(approver_no=employee_no)
+        if include_hr_queue:
+            criteria |= Q(approver_no__isnull=True, status="대기")
         return [
             request_to_entity(model)
-            for model in LeaveRequestModel.objects.filter(approver_no=employee_no)
+            for model in LeaveRequestModel.objects.filter(criteria)
         ]
 
 

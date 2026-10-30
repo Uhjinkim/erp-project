@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react"
-import { Checkbox, Select, TextInput, Textarea } from "../../../components/ui"
+import { Button, Checkbox, Select, TextInput, Textarea } from "../../../components/ui"
 import type { MasterData } from "../hooks"
 import type { EmploymentForm, FieldErrors } from "../model"
 import styles from "../workforce.module.css"
@@ -11,6 +11,13 @@ type EmploymentFormFieldsProps = {
   master: MasterData
   disabled: boolean
   onChange: (form: EmploymentForm) => void
+}
+
+// 기존 서버 권한을 설명하는 안내 문구다. 역할 목록과 부여 가능 여부는 서버가 결정한다.
+const roleHints: Record<string, string> = {
+  HR_MANAGER: "사원·조직 정보와 인사 업무를 관리하고, 인사관리자 승인 대상 휴가를 승인·반려합니다. 인사 관리자 중 누구나 처리할 수 있습니다.",
+  MANAGEMENT_OFFICER: "경영 공지를 작성하며 게시판 운영자로서 다른 사람의 글·댓글을 삭제할 수 있습니다. 다른 사람의 글·댓글은 수정할 수 없습니다.",
+  PAYROLL_MANAGER: "급여를 계산하고 급여대장·급여명세서를 관리합니다.",
 }
 
 // FN-HR-006 신규 등록과 FN-HR-009 재입사에서 같은 입력 구조를 사용한다.
@@ -67,15 +74,31 @@ export function EmploymentFormFields({ mode, form, errors, master, disabled, onC
       </fieldset>
 
       <fieldset className={styles.fieldset} disabled={disabled}>
-        <legend>업무 역할·계정</legend>
+        <legend>업무 역할 (선택)</legend>
+        <p className={styles.hint}>일반 사원은 추가 역할을 선택하지 않아도 됩니다. 담당 업무에 필요한 권한만 선택하세요. 여러 역할을 함께 부여할 수 있습니다.</p>
+        <p className={styles.hint}>부서장은 역할 선택이 아니라 조직 관리에서 지정합니다.</p>
+        <div className={styles.spread}>
+          <p className={styles.hint} role="status">
+            {form.role_codes.length === 0 ? "일반 사원 · 추가 업무 역할 없음" : `추가 업무 역할 ${form.role_codes.length}개 선택`}
+          </p>
+          {form.role_codes.length > 0 && <Button size="small" variant="secondary" onClick={() => set("role_codes", [])}>추가 역할 모두 해제</Button>}
+        </div>
         {master.roles.length === 0
-          ? <p className={styles.hint}>등록된 역할이 없습니다. 역할은 등록 후 역할 부여 화면에서도 지정할 수 있습니다.</p>
+          ? <p className={styles.hint}>등록된 추가 역할이 없습니다. 일반 사원으로 등록할 수 있으며, 역할은 등록 후 역할 부여 화면에서도 지정할 수 있습니다.</p>
           : <div className={styles.choices} role="group" aria-label="부여할 업무 역할">
               {master.roles.map((role) => (
-                <Checkbox key={role.role_code} label={role.role_name} checked={form.role_codes.includes(role.role_code)} onChange={(event) => toggleRole(role.role_code, event.target.checked)} />
+                <div key={role.role_code} className={styles.roleChoice}>
+                  <Checkbox label={role.role_name} checked={form.role_codes.includes(role.role_code)} onChange={(event) => toggleRole(role.role_code, event.target.checked)} />
+                  {roleHints[role.role_code] && <p className={styles.hint}>{roleHints[role.role_code]}</p>}
+                </div>
               ))}
             </div>}
         {errors.role_codes && <p className={styles.hint} role="alert">{errors.role_codes}</p>}
+      </fieldset>
+
+      <fieldset className={styles.fieldset} disabled={disabled}>
+        <legend>로그인 계정</legend>
+        <p className={styles.hint}>업무 역할 선택과 별개로 로그인 계정 생성 여부를 지정합니다.</p>
         <Checkbox label="로그인 계정을 함께 만듭니다 (아이디: 사내 이메일)" checked={form.create_account} onChange={(event) => set("create_account", event.target.checked)} />
         {form.create_account && (
           <TextInput label="초기 비밀번호" type="password" autoComplete="new-password" required minLength={8} value={form.password} error={errors.password} hint="8자 이상. 응답과 화면에 다시 표시하지 않습니다." onChange={text("password")} />

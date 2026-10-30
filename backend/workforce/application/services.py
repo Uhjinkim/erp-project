@@ -13,6 +13,7 @@ from workforce.domain.policies import (
 )
 
 HR_MANAGER_ROLE = "HR_MANAGER"
+# 과거 배정 이력·입력 거절에만 사용한다. 0008에서 HR_MANAGER로 통합한다.
 HR_LEAVE_APPROVER_ROLE = "HR_LEAVE_APPROVER"
 MANAGEMENT_OFFICER_ROLE = "MANAGEMENT_OFFICER"
 PAYROLL_MANAGER_ROLE = "PAYROLL_MANAGER"
@@ -68,8 +69,11 @@ def resolve_vacation_approver(
     return choose_vacation_approver(
         applicant_no=employee_no,
         department_head=head,
-        hr_approvers=gateway.active_role_holders(HR_LEAVE_APPROVER_ROLE, limit=2),
     )
+
+
+def has_vacation_hr_approvers(gateway: WorkforceQueryGateway) -> bool:
+    return any(candidate.is_active for candidate in gateway.active_role_holders(HR_MANAGER_ROLE))
 
 
 def assign_employee_role(
@@ -84,11 +88,8 @@ def assign_employee_role(
         )
     if gateway.has_active_assignment(employee_no, role_code):
         raise WorkforceRuleViolation("이미 활성화된 역할입니다.")
-    if (
-        role_code == HR_LEAVE_APPROVER_ROLE
-        and gateway.active_role_holder_count(role_code) > 0
-    ):
-        raise WorkforceRuleViolation("휴가 승인 인사담당자는 한 명만 지정할 수 있습니다.")
+    if role_code == HR_LEAVE_APPROVER_ROLE:
+        raise WorkforceRuleViolation("인사 관리자 역할을 선택하세요.", field="role_code")
     return gateway.assign_role(employee_no, role_code)
 
 
