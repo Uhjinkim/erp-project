@@ -121,3 +121,37 @@ Secret 수정 후에도 인증 실패한다. 사용자가 RDS의 실제 관리�
   실제 직원 신원을 만들거나 개발 계정을 복사하지 않았다.
 - runtime.json의 secret_arn을 앱 전용 database Secret으로 전환했다. EC2 역할에서 기존
   postgres 관리자 Secret 읽기 권한을 제거했다. 첫 계정/세션 검사 후 bootstrap-admin 접근도 제거한다.
+
+## 배포·외부 검증 완료
+
+- 실행 이미지/코드: d1ff8072d07bc5634362e34861bf4ab17d5dca72.
+  [main CI/CD 40987073259](https://github.com/Uhjinkim/erp-project/actions/runs/40987073259)의
+  backend/frontend/deploy 모두 success. dev에도 같은 코드가 반영되어 있다.
+- 공개 주소 https://13.125.22.237 의 health 본문은 status=online, end_to_end=connected.
+- 실제 HTTPS 클라이언트에서 CSRF Secure, session Secure/HttpOnly, 관리자 로그인 200,
+  세션 me 200, HR 목록 접근 200, 로그아웃 204, 로그아웃 후 인증 해제를 검증했다.
+  응답의 이메일·프로필·비밀번호·쿠키 값은 출력하지 않았다.
+- 초기 관리자 비밀번호는 `erp/production/bootstrap-admin` Secret에서 사용자만 조회한다.
+  계정 생성과 검증이 끝나 EC2 runtime의 해당 Secret 접근을 제거하고 provider 캐시를 비웠다.
+- 최종 runtime Secret 범위는 앱 database/django 2개만이다. 부착 관리형 정책은 SSM Core뿐이다.
+- 최소권한 상태에서 user systemd erp를 재시작해 정상 복구를 확인했다. erp/docker active,
+  backend/nginx healthy, 재시작 후 공개 health도 online/connected다.
+- 실제 RDS 최종 수량: 테이블 33, migration 41, content type 29, permission 116, 업무 역할 3,
+  급여 구성항목 8, 공지 분류 3, 신규 관리자 1. 사원·급여명세·평가·휴가신청은 각각 0건이다.
+- 승인된 데이터 없는 SQL과 복원 manifest를 비공개 S3에 보관했다. AES256/versioning/크기 확인:
+  `s3://erp-releases-610849077646-ap-northeast-2/baselines/2026-10-30/schema-main.sql` (70253 bytes),
+  `s3://erp-releases-610849077646-ap-northeast-2/baselines/2026-10-30/restore-plan.json` (112274 bytes).
+  Secret 값이나 개발 계정·사원 데이터는 포함하지 않으며 Git에 dump를 커밋하지 않았다.
+- 로컬 격리 PostgreSQL 검증 서버를 종료했다. 사용자 소유 개발 SSH 터널은 임의 종료하지 않았고
+  구조 추출 완료로 닫아도 된다고 안내했다.
+
+## 남은 운영 준비·검증 범위
+
+- 부서·직급·휴가 유형·공휴일과 실제 사원 등록은 아직 수행하지 않았다. 구조만 가져오기로 한
+  사용자 선택에 따라 개발 업무 기준정보 행도 복사하지 않았다.
+- 원본 DB의 기존 NULL 제약과 모델 사이의 차이는 보존했으며 별도의 업무 정책/스키마 검토 대상이다.
+  모든 업무 CRUD를 실데이터로 검수한 결과로 해석하지 않는다.
+- host 전체 재부팅과 실제 장애를 주입한 release rollback은 하지 않았다. 서비스 재시작과
+  rollback 회귀 테스트는 통과했다. DB migration은 정상 CI/CD에 자동 추가하지 않았다.
+- 퍼블릭 IP가 바뀌면 인증서/host 설정/workflow를 함께 변경해야 한다. 현재 Elastic IP는 새로
+  할당하지 않았고, 6일 인증서의 자동 갱신 timer/hook 검증은 10-29에 완료했다.

@@ -1,5 +1,8 @@
 # main GitHub Actions · EC2 운영 배포
 
+> 2026-10-30 배포 완료. https://13.125.22.237 에서 health 및 관리자 HTTPS 세션 흐름을 검증했다.
+> 실행 기록은 [10-30 보고서](../reports/2026-10-30_aws-deployment-resume.md)를 참조한다.
+
 작성·검증일: 2026-10-29. 기존 Cloudflare/env-file 설계 대신 사용자가 선택한 퍼블릭 IP HTTPS 경로다.
 
 ## 배포 흐름
@@ -50,6 +53,8 @@ DB 이름·사용자·endpoint·도메인/IP·Secret ARN·ECR/S3 식별자를 �
 앱 전용 database Secret의 DB_NAME/DB_USER/DB_PASSWORD를 사용한다. DB_NAME/DB_USER가 없을 때만
 runtime.json을 사용한다. 별도 django Secret에서 signing key를 주입한다.
 기존 SecretManager는 RDS postgres 관리자용으로 유지하고 앱 runtime의 접근을 제거했다.
+첫 관리자 자격증명은 `erp/production/bootstrap-admin` Secret에 보관한다. AWS 콘솔에서 직접
+조회하고 최초 사용 후 암호를 교체한다. 이 Secret도 EC2 runtime에서는 읽을 수 없다.
 현재 비밀번호 없는 private Valkey의 REDIS_URL은 runtime.json의 실제 TLS endpoint를 사용한다.
 이전 설정의 URL은 placeholder여서 사용하지 않는다. 인증이 필요한 URL을 Secret에서 사용하려면
 runtime.json의 redis_url을 null로 설정한다. URL은 `rediss://`여야 하고 추가 cache URL도 TLS를 요구한다.
