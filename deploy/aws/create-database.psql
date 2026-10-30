@@ -1,0 +1,48 @@
+-- REVIEW ONLY until the user approves writes to erp-postgres / erp-db / erp.
+-- Run with psql -X, verified TLS, and postgres credentials injected by asm-exec.
+-- ERP_APP_DB_PASSWORD must come from a separate application Secret, never argv.
+-- No schema restore, migration, seeds, employee records or account creation here.
+\set ON_ERROR_STOP on
+\set ECHO none
+\set QUIET on
+\getenv app_password ERP_APP_DB_PASSWORD
+\if :{?app_password}
+\else
+  \echo 'Application password environment is required'
+  DO $$ BEGIN RAISE EXCEPTION 'Database bootstrap precondition failed'; END; $$;
+\endif
+
+SELECT current_user = 'postgres' AND current_database() = 'postgres' AS correct_session,
+       NOT EXISTS (SELECT FROM pg_database WHERE datname = 'erp-db') AS database_absent,
+       NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'erp') AS role_absent,
+       length(:'app_password') >= 32 AS password_valid
+\gset
+\if :correct_session
+\else
+  \echo 'Expected postgres administrator on postgres database'
+  DO $$ BEGIN RAISE EXCEPTION 'Database bootstrap precondition failed'; END; $$;
+\endif
+\if :database_absent
+\else
+  \echo 'Target database exists; refusing to modify it'
+  DO $$ BEGIN RAISE EXCEPTION 'Database bootstrap precondition failed'; END; $$;
+\endif
+\if :role_absent
+\else
+  \echo 'Target role exists; refusing to modify it'
+  DO $$ BEGIN RAISE EXCEPTION 'Database bootstrap precondition failed'; END; $$;
+\endif
+\if :password_valid
+\else
+  \echo 'Application password is too short'
+  DO $$ BEGIN RAISE EXCEPTION 'Database bootstrap precondition failed'; END; $$;
+\endif
+
+CREATE ROLE erp LOGIN PASSWORD :'app_password'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+CREATE DATABASE "erp-db" OWNER erp TEMPLATE template0 ENCODING 'UTF8';
+REVOKE ALL ON DATABASE "erp-db" FROM PUBLIC;
+\connect "erp-db"
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+ALTER SCHEMA public OWNER TO erp;
+\echo 'Created application database and scoped owner role; schema baseline is still required'

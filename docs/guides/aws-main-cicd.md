@@ -48,8 +48,10 @@
 `/etc/erp/runtime.json`은 `deploy/aws/runtime.json.example` 기반의 **비밀 없는** 설정이다.
 DB 이름·사용자·endpoint·도메인/IP·Secret ARN·ECR/S3 식별자를 둔다.
 기존 Secret의 DB_NAME/DB_USER가 있다면 우선 사용하고, 없으면 runtime.json을 사용한다.
-기존 Secret의 DB_PASSWORD·REDIS_URL을 유지하며, 별도 Secret의 Django 키가 기존 키보다 우선한다.
-Valkey URL은 `rediss://`여야 한다. 추가 cache URL도 같은 TLS 요구를 적용한다.
+기존 Secret 값은 유지하며 별도 Secret의 Django 키가 기존 키보다 우선한다.
+현재 비밀번호 없는 private Valkey의 REDIS_URL은 runtime.json의 실제 TLS endpoint를 사용한다.
+기존 Secret의 URL은 placeholder여서 사용하지 않는다. 인증이 필요한 URL을 Secret에서 사용하려면
+runtime.json의 redis_url을 null로 설정한다. URL은 `rediss://`여야 하고 추가 cache URL도 TLS를 요구한다.
 
 EC2 역할은 지정한 Secret 2개의 GetSecretValue/DescribeSecret, 해당 ECR pull,
 릴리스 prefix 읽기와 SSM Core만 허용한다. DescribeSecret은 provider의 캐시 갱신에도 필요하다.

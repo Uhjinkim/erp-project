@@ -71,11 +71,20 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(env["DOCKER_CONFIG"], "/tmp/test-only-auth")
         self.assertNotIn("DOCKER_CONTEXT", env)
 
+    def test_configured_valkey_endpoint_overrides_old_secret_placeholder(self):
+        env = runtime.environment(CONFIG, {**SECRET, "REDIS_URL": "rediss://placeholder:6379"})
+        self.assertEqual(env["REDIS_URL"], CONFIG["redis_url"])
+        authenticated = "rediss://test-user:test-only-password@cache.example.com:6379/0"
+        env = runtime.environment(
+            {**CONFIG, "redis_url": None}, {**SECRET, "REDIS_URL": authenticated}
+        )
+        self.assertEqual(env["REDIS_URL"], authenticated)
+
     def test_invalid_secrets_fail_without_echoing_value(self):
         for secret in [
             {},
             {**SECRET, "DB_PASSWORD": 123},
-            {**SECRET, "REDIS_URL": "redis://sensitive-value"},
+            {**SECRET, "REFERENCE_CACHE_URL": "redis://sensitive-value"},
             {**SECRET, "DJANGO_SECRET_KEY": "sensitive-value"},
         ]:
             with self.subTest(secret_type=type(secret).__name__):

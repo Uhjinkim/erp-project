@@ -41,7 +41,9 @@ def environment(config, secret):
         raise ValueError("Missing Secret keys: " + ", ".join(sorted(missing)))
     if len(values["DJANGO_SECRET_KEY"]) < 50:
         raise ValueError("DJANGO_SECRET_KEY must have at least 50 characters")
-    values.setdefault("REDIS_URL", config["redis_url"])
+    # This deployment's passwordless, private Valkey endpoint is host configuration.
+    # Set redis_url to null to use an authenticated URL from Secrets Manager instead.
+    values["REDIS_URL"] = config.get("redis_url") or values.get("REDIS_URL", "")
     values.setdefault("REFERENCE_CACHE_URL", values["REDIS_URL"])
     if not all(values[key].startswith("rediss://") for key in ("REDIS_URL", "REFERENCE_CACHE_URL")):
         raise ValueError("Production Valkey connections must use rediss://")
