@@ -2,7 +2,7 @@
   "region": "ap-northeast-2",
   "registry": "610849077646.dkr.ecr.ap-northeast-2.amazonaws.com",
   "release_bucket": "erp-releases-610849077646-ap-northeast-2",
-  "secret_arn": "arn:aws:secretsmanager:ap-northeast-2:610849077646:secret:SecretManager-StO81K",
+  "secret_arn": "arn:aws:secretsmanager:ap-northeast-2:610849077646:secret:erp/production/database-BhSrJ8",
   "django_secret_arn": "arn:aws:secretsmanager:ap-northeast-2:610849077646:secret:erp/production/django-uPFC79",
   "public_host": "13.125.22.237",
   "db_host": "erp-postgres.c7sqmawwc87r.ap-northeast-2.rds.amazonaws.com",

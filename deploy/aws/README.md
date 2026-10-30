@@ -14,3 +14,8 @@ Agent나 운영자가 값을 출력하는 진단은 실행하지 않는다. Secr
 대상·관리자 인증·복구 지점·쓰기 승인을 확인한 뒤 별도 앱 Secret과 `psql -X`로만 사용한다.
 업무 schema baseline은 별도이며, SQL 검증과 미해결 사항은
 [10-30 재개 보고서](../../docs/reports/2026-10-30_aws-deployment-resume.md)에 기록한다.
+
+`initialize_metadata.py`는 검증한 schema-only 복원 후의 일회성 도구다. 정상 CI/CD나 서비스 시작
+명령에는 연결하지 않는다. `--plan`의 구조 manifest와 release migration 파일 일치, erp/erp-db,
+모든 대상 테이블의 빈 상태를 확인한 뒤에만 시스템 metadata와 코드 seed를 transaction으로 넣는다.
+[스키마 복원 검토안](../../docs/reports/2026-10-30_schema-restore-plan.md)을 먼저 읽는다.

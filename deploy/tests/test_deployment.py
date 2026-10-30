@@ -22,6 +22,7 @@ def load(name, filename):
 
 runtime = load("runtime", "runtime.py")
 release = load("release", "erp-release.py")
+metadata = load("metadata", "initialize_metadata.py")
 
 CONFIG = {
     "public_host": "192.0.2.1",
@@ -39,6 +40,19 @@ SECRET = {
 
 
 class EnvironmentTests(unittest.TestCase):
+    def test_postgresql_varchar_array_cast_forms_compare_equally(self):
+        source = (
+            "CHECK (state::text = ANY ((ARRAY['draft'::character varying, "
+            "'done'::character varying])::text[]))"
+        )
+        restored = (
+            "CHECK (state::text = ANY (ARRAY[('draft'::character varying)::text, "
+            "('done'::character varying)::text]))"
+        )
+        self.assertEqual(metadata.normalize_constraint(source), restored)
+        unrelated = "CHECK (amount::numeric >= 0 AND flags = ARRAY[1, 2])"
+        self.assertEqual(metadata.normalize_constraint(unrelated), unrelated)
+
     def test_allowlist_and_literal_secret_are_preserved(self):
         secret = {
             **SECRET,

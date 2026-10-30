@@ -46,7 +46,7 @@ jobs:
       - run: uv run python manage.py makemigrations --check --dry-run
       - name: Deployment regression tests
         run: |
-          uv run ruff check ../deploy/aws/runtime.py ../deploy/aws/erp-release.py ../deploy/tests
+          uv run ruff check ../deploy/aws/runtime.py ../deploy/aws/erp-release.py ../deploy/aws/initialize_metadata.py ../deploy/tests
           uv run python -m unittest discover -s ../deploy/tests -v
 
   frontend:

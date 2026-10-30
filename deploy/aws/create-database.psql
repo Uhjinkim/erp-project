@@ -40,9 +40,15 @@ SELECT current_user = 'postgres' AND current_database() = 'postgres' AS correct_
 
 CREATE ROLE erp LOGIN PASSWORD :'app_password'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+-- PostgreSQL 16+ CREATEROLE does not imply SET ROLE on a newly created role.
+-- Give the creator temporary SET ability without inherited application privileges.
+GRANT erp TO postgres WITH INHERIT FALSE, SET TRUE;
 CREATE DATABASE "erp-db" OWNER erp TEMPLATE template0 ENCODING 'UTF8';
-REVOKE ALL ON DATABASE "erp-db" FROM PUBLIC;
 \connect "erp-db"
+SET ROLE erp;
+REVOKE ALL ON DATABASE "erp-db" FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 ALTER SCHEMA public OWNER TO erp;
+RESET ROLE;
+GRANT erp TO postgres WITH INHERIT FALSE, SET FALSE;
 \echo 'Created application database and scoped owner role; schema baseline is still required'

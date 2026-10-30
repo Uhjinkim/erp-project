@@ -37,7 +37,7 @@
 | 릴리스 S3 | erp-releases-610849077646-ap-northeast-2, releases/ prefix |
 | EC2 역할 | erp-ec2-runtime |
 | GitHub 역할 | erp-github-deploy |
-| 운영 Secret | 기존 SecretManager, 별도 erp/production/django |
+| 운영 Secret | erp/production/database, erp/production/django |
 
 호스트 nginx 443 → 127.0.0.1:8080 nginx 컨테이너 → private network backend:8000 → RDS/Valkey다.
 8000/8080은 공개하지 않는다. HTTPS와 인증서 파일은 호스트 nginx가 관리한다.
@@ -47,10 +47,11 @@
 
 `/etc/erp/runtime.json`은 `deploy/aws/runtime.json.example` 기반의 **비밀 없는** 설정이다.
 DB 이름·사용자·endpoint·도메인/IP·Secret ARN·ECR/S3 식별자를 둔다.
-기존 Secret의 DB_NAME/DB_USER가 있다면 우선 사용하고, 없으면 runtime.json을 사용한다.
-기존 Secret 값은 유지하며 별도 Secret의 Django 키가 기존 키보다 우선한다.
+앱 전용 database Secret의 DB_NAME/DB_USER/DB_PASSWORD를 사용한다. DB_NAME/DB_USER가 없을 때만
+runtime.json을 사용한다. 별도 django Secret에서 signing key를 주입한다.
+기존 SecretManager는 RDS postgres 관리자용으로 유지하고 앱 runtime의 접근을 제거했다.
 현재 비밀번호 없는 private Valkey의 REDIS_URL은 runtime.json의 실제 TLS endpoint를 사용한다.
-기존 Secret의 URL은 placeholder여서 사용하지 않는다. 인증이 필요한 URL을 Secret에서 사용하려면
+이전 설정의 URL은 placeholder여서 사용하지 않는다. 인증이 필요한 URL을 Secret에서 사용하려면
 runtime.json의 redis_url을 null로 설정한다. URL은 `rediss://`여야 하고 추가 cache URL도 TLS를 요구한다.
 
 EC2 역할은 지정한 Secret 2개의 GetSecretValue/DescribeSecret, 해당 ECR pull,
@@ -116,6 +117,12 @@ DB migration 역실행은 하지 않는다.
 사용자가 확인한 DB에 읽기 전용 접속·스키마 검사부터 하고, schema baseline·기준정보·계정 준비는
 대상·권한·복구 지점의 별도 승인 후 진행한다. 이 workflow에는 DB 쓰기 명령을 추가하지 않는다.
 현재 실측 결과와 미완료 항목은 [배포 보고서](../reports/2026-10-29_main-cicd-deployment.md)에 기록한다.
+
+2026-10-30 새 erp-db/erp와 앱 Secret을 만들고, 검증한 main용 schema-only 구조 33개 테이블을
+사용자 승인 후 복원했다. migration 41개·Django permission·코드 기준정보만 초기화했으며 개발 계정·
+사원·급여명세는 복사하지 않았다. 자세한 대상/제약/검증은
+[재개 보고서](../reports/2026-10-30_aws-deployment-resume.md)와
+[구조 복원 계획](../reports/2026-10-30_schema-restore-plan.md)을 참조한다.
 
 근거: [GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws),
 [IP 인증서/Certbot](https://letsencrypt.org/2026/03/11/shorter-certs-certbot),
