@@ -29,7 +29,8 @@ PostgreSQL and Redis run on team-managed remote infrastructure. Local applicatio
 - `docs/contributions/<module>/<branch-slug>/`: feature-branch design and documentation proposals
 - `scripts/`: cross-platform development helpers, including SSH tunnel, integrated startup, and documentation workflow scripts
 - `.env.example`: documented environment-variable template
-- `README.md`: canonical developer setup and infrastructure instructions
+- `README.md`: project overview and portfolio
+- `DEVELOPMENT.md`: canonical developer setup and infrastructure instructions
 
 Keep backend and frontend dependencies within their respective directories and lockfiles. Do not add generated environments or build output to version control.
 
